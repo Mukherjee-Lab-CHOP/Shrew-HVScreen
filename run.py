@@ -32,6 +32,7 @@ uses:
 
 import argparse
 import importlib
+import os
 import pkgutil
 import sys
 import threading
@@ -43,6 +44,14 @@ from hardware import Hardware
 from display import Display
 
 DEFAULT_EXPERIMENT = "choose_orientation"
+
+# Stimulus images live in figures/ next to this script. Resolve them absolutely
+# so the display works regardless of the current working directory.
+HERE = os.path.dirname(os.path.abspath(__file__))
+FIGURES_DIR = os.path.join(HERE, "figures")
+FIG_HORIZONTAL = os.path.join(FIGURES_DIR, "orientation_horizontal.png")
+FIG_VERTICAL   = os.path.join(FIGURES_DIR, "orientation_vertical.png")
+FIG_OVERLAY    = os.path.join(FIGURES_DIR, "correct_square.png")
 
 
 def discover_experiments():
@@ -123,9 +132,12 @@ def main():
                    help="Arduino serial port (e.g. COM3 or /dev/tty.usbmodem1101). "
                         "Omit to run terminal-only.")
     p.add_argument("--baud", type=int, default=DEFAULT_BAUD)
-    p.add_argument("--fig1", default="fig1.png", help="Horizontal figure image.")
-    p.add_argument("--fig2", default="fig2.png", help="Vertical figure image.")
-    p.add_argument("--fig3", default="fig3.png", help="Choice-highlight overlay image.")
+    p.add_argument("--fig1", default=FIG_HORIZONTAL,
+                   help="Horizontal figure image (FIG1).")
+    p.add_argument("--fig2", default=FIG_VERTICAL,
+                   help="Vertical figure image (FIG2).")
+    p.add_argument("--fig3", default=FIG_OVERLAY,
+                   help="Choice-highlight overlay image.")
     p.add_argument("--screen", type=int, default=0, help="Monitor index for fullscreen.")
     p.add_argument("--windowed", action="store_true", help="Windowed instead of fullscreen.")
     p.add_argument("--no-display", action="store_true", help="Run without the pygame screen.")
@@ -165,7 +177,16 @@ def main():
     experiment_cls = registry[args.experiment]
 
     # ---- Arduino hardware --------------------------------------------------
-    hw = Hardware(port=args.port, baud=args.baud)
+    port = args.port
+    if port is None:
+        ports = Hardware.available_ports()
+        if len(ports) == 1:
+            port = ports[0]
+            print(f"[info] auto-detected serial port: {port}")
+        elif len(ports) > 1:
+            print(f"[info] multiple serial ports found ({', '.join(ports)}); "
+                  f"pass --port to choose one. Running terminal-only for now.")
+    hw = Hardware(port=port, baud=args.baud)
     hw.connect()                       # falls back to detached mode if no port
 
     # ---- Display -----------------------------------------------------------

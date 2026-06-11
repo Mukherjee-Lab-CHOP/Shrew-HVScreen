@@ -94,10 +94,17 @@ Arduino, a beam held broken for `HOLD_MS` (2 s) produces the same effect.
 
 ## Display assets
 
-The display expects `fig1.png` (horizontal), `fig2.png` (vertical), and
-`fig3.png` (choice overlay) next to `run.py`, or pass `--fig1/--fig2/--fig3`.
-If they're missing the display disables itself and the task keeps running from
-the terminal.
+The display loads its images from `figures/` next to `run.py`:
+
+| FIG | File | Shown for |
+|-----|------|-----------|
+| FIG1 | `figures/orientation_horizontal.png` | horizontal target |
+| FIG2 | `figures/orientation_vertical.png`   | vertical target |
+| FIG3 | `figures/correct_square.png`         | choice highlight overlay |
+
+Override any of them with `--fig1/--fig2/--fig3`. If an image is missing the
+display prints a warning, disables itself, and the task keeps running from the
+terminal.
 
 ## Output
 
