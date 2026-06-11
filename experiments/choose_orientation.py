@@ -4,15 +4,15 @@ The Arduino no longer runs the trial logic; this class does. It is a
 non-blocking state machine driven by `step(keys)`, called repeatedly from the
 main loop. Two input sources feed it in parallel:
 
-  * Real IR beam breaks, delivered by turn_motor.poll_events(). Hold timing
-    (a beam must stay broken for HOLD_MS) is done here, in Python.
+  * Real IR beam breaks, delivered by hardware.ir_detector.poll_events(). Hold
+    timing (a beam must stay broken for HOLD_MS) is done here, in Python.
   * Terminal keystrokes ('c', 'l', 'r', 't', 'q'), which act as instant holds
     so the task can be driven by hand with or without an Arduino attached.
 
 States mirror cue.ino: WAIT_CENTER_HOLD -> WAIT_CHOICE_HOLD -> ITI.
 
 Outputs:
-  * Actuation via turn_motor (gate servo, reward pumps).
+  * Actuation via hardware (motor.open/close gate servo, reward pumps).
   * Stimulus via Display (show / choice overlay / black).
   * One CSV row per completed trial (same columns as the original screen.py).
 """
@@ -39,8 +39,8 @@ def _now_ms():
 
 
 class CueExperiment:
-    def __init__(self, link, display, csv_path=None, verbose=True):
-        self.link = link
+    def __init__(self, hardware, display, csv_path=None, verbose=True):
+        self.hw = hardware
         self.display = display
         self.verbose = verbose
 
@@ -137,7 +137,7 @@ class CueExperiment:
 
     # ---- IR event handling -------------------------------------------------
     def _ingest_ir_events(self):
-        for channel, broken, _arduino_ms in self.link.poll_events():
+        for channel, broken, _arduino_ms in self.hw.ir_detector.poll_events():
             if channel not in self._broken:
                 continue
             if broken and not self._broken[channel]:
@@ -201,7 +201,7 @@ class CueExperiment:
         self._print_banner()
 
         # Gate opens at stimulus onset and stays open through the ITI.
-        self.link.gate_open()
+        self.hw.motor.open()
         self.display.show(self.left_fig, self.right_fig)
         self.stim_onset_ms = self.clock()
 
@@ -218,7 +218,7 @@ class CueExperiment:
         self._log(f"CHOICE {side}{suffix}  reaction_time={reaction_time_ms} ms")
 
         if rewarded:
-            self.link.reward(side)
+            self.hw.reward.deliver(side)
             # Consume the armed reward for the chosen orientation.
             if chosen_fig == ORIENT_HORIZONTAL:
                 self.horizontal_rewarded = False
@@ -257,7 +257,7 @@ class CueExperiment:
         # timeout: counters unchanged (matches endTrial(ORIENT_NONE))
 
     def _end_iti(self):
-        self.link.gate_close()
+        self.hw.motor.close()
         self.state = STATE_WAIT_CENTER
         self.state_start = self.clock()
         self._log("STATE = WAIT_CENTER_HOLD (hold CENTER, or press c)")

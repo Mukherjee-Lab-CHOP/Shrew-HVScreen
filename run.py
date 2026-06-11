@@ -3,7 +3,7 @@
 
 Wires together the pieces and runs the main loop:
 
-    turn_motor   <- talks to the Arduino firmware (IR in, actuation out)
+    Hardware     <- Motor / Reward / IR / Tone over one serial link to the Arduino
     Display      <- pygame stimulus screen
     <experiment> <- the trial logic + CSV logging (chosen with --experiment)
 
@@ -39,7 +39,7 @@ import time
 
 import experiments
 from config import DEFAULT_BAUD, DEFAULT_HIGHLIGHT_MS
-from turn_motor import turn_motor
+from hardware import Hardware
 from display import Display
 
 DEFAULT_EXPERIMENT = "choose_orientation"
@@ -146,7 +146,7 @@ def main():
         return
 
     if args.list_ports:
-        ports = turn_motor.available_ports()
+        ports = Hardware.available_ports()
         if ports:
             print("Serial ports:")
             for d in ports:
@@ -164,9 +164,9 @@ def main():
         return
     experiment_cls = registry[args.experiment]
 
-    # ---- Arduino link ------------------------------------------------------
-    link = turn_motor(port=args.port, baud=args.baud)
-    link.connect()                     # falls back to detached mode if no port
+    # ---- Arduino hardware --------------------------------------------------
+    hw = Hardware(port=args.port, baud=args.baud)
+    hw.connect()                       # falls back to detached mode if no port
 
     # ---- Display -----------------------------------------------------------
     display = Display(fig1=args.fig1, fig2=args.fig2, fig3=args.fig3,
@@ -176,7 +176,7 @@ def main():
 
     # ---- Experiment --------------------------------------------------------
     print(f"[info] running experiment: {args.experiment}")
-    exp = experiment_cls(link, display, csv_path=args.csv)
+    exp = experiment_cls(hw, display, csv_path=args.csv)
 
     get_keys = _start_key_thread()
 
@@ -193,7 +193,7 @@ def main():
     finally:
         exp.close()
         display.close()
-        link.close()
+        hw.close()
         trials = getattr(exp, "trial_num", "?")
         csv_path = getattr(exp, "csv_path", "?")
         print(f"\n  Stopped after {trials} trial(s). CSV: {csv_path}")

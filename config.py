@@ -18,6 +18,10 @@ ITI_MS            = 6000     # inter-trial interval
 P_STIM_HORIZONTAL = 0.8
 P_STIM_VERTICAL   = 0.2
 
+# ---- Gate servo (Motor) ----------------------------------------------------
+SERVO_OPEN_DEG  = 60    # angle that opens the choice gate
+SERVO_CLOSE_DEG = 180   # angle that closes it
+
 # ---- Display ---------------------------------------------------------------
 DEFAULT_HIGHLIGHT_MS = 1500  # how long the fig3 overlay stays after a choice
 

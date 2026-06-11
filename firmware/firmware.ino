@@ -6,8 +6,8 @@
       the IR emitters, and (stubbed) a tone/buzzer.
 
   All trial logic — reward probabilities, stimulus assignment, choice timing,
-  CSV logging — lives in the Python controller (experiment.py), which talks to
-  this board through the turn_motor class.
+  CSV logging — lives in the Python controller, which talks to this board
+  through the Motor / Reward / IR / Tone classes (over one SerialLink).
 
   Wiring (unchanged from the original cue.ino):
     INNER RIGHT:  LED emitter pin 6   | Receiver pin 19
@@ -25,8 +25,7 @@
     PING            -> replies "PONG"
     REWARD L        -> pulse LEFT pump for REWARD_MS
     REWARD R        -> pulse RIGHT pump for REWARD_MS
-    GATE OPEN       -> servo to OPEN  (60 deg)
-    GATE CLOSE      -> servo to CLOSE (180 deg)
+    SERVO <angle>   -> turn the gate servo to <angle> deg (0..180)
     EMIT ON         -> IR emitters ON
     EMIT OFF        -> IR emitters OFF
     TONE <hz> <ms>  -> STUBBED (logs only; no buzzer wired yet)
@@ -118,16 +117,13 @@ void rewardRight() {
   Serial.print(millis()); Serial.println(F("  REWARD RIGHT OFF"));
 }
 
-void gateOpen() {
-  gateServo.write(SERVO_OPEN_DEG);
-  Serial.print(millis()); Serial.print(F("  GATE OPEN ("));
-  Serial.print(SERVO_OPEN_DEG); Serial.println(F(" deg)"));
-}
-
-void gateClose() {
-  gateServo.write(SERVO_CLOSE_DEG);
-  Serial.print(millis()); Serial.print(F("  GATE CLOSE ("));
-  Serial.print(SERVO_CLOSE_DEG); Serial.println(F(" deg)"));
+// Turn the gate servo to an absolute angle (clamped to 0..180).
+void servoTo(int deg) {
+  if (deg < 0)   deg = 0;
+  if (deg > 180) deg = 180;
+  gateServo.write(deg);
+  Serial.print(millis()); Serial.print(F("  SERVO -> "));
+  Serial.print(deg); Serial.println(F(" deg"));
 }
 
 // STUB: real buzzer not wired yet. Logs the request so the Python side can be
@@ -147,10 +143,20 @@ void printBanner() {
   Serial.println(F("################################################################"));
   Serial.print  (F("  BROKEN_IS_LOW = "));
   Serial.println(BROKEN_IS_LOW ? F("true") : F("false"));
-  Serial.println(F("  Commands: PING | REWARD L|R | GATE OPEN|CLOSE |"));
+  Serial.println(F("  Commands: PING | REWARD L|R | SERVO <angle> |"));
   Serial.println(F("            EMIT ON|OFF | TONE <hz> <ms> | ?"));
   Serial.println(F("  Emits:    IR <CHANNEL> BROKEN|CLEAR <millis>"));
   Serial.println();
+}
+
+void handleServo(const String& s) {
+  // Expect: SERVO <angle>
+  int sp = s.indexOf(' ');
+  if (sp > 0) {
+    servoTo(s.substring(sp + 1).toInt());
+  } else {
+    Serial.println(F("ERR SERVO needs an angle"));
+  }
 }
 
 void handleTone(const String& s) {
@@ -176,11 +182,12 @@ void handleCommand(String s) {
   if      (s.equalsIgnoreCase("PING"))       Serial.println(F("PONG"));
   else if (s.equalsIgnoreCase("REWARD L"))   rewardLeft();
   else if (s.equalsIgnoreCase("REWARD R"))   rewardRight();
-  else if (s.equalsIgnoreCase("GATE OPEN"))  gateOpen();
-  else if (s.equalsIgnoreCase("GATE CLOSE")) gateClose();
   else if (s.equalsIgnoreCase("EMIT ON"))    setEmitters(true);
   else if (s.equalsIgnoreCase("EMIT OFF"))   setEmitters(false);
   else if (s.equalsIgnoreCase("?"))          printBanner();
+  else if (s.length() >= 6 &&
+           (s[0] == 'S' || s[0] == 's') &&
+           (s[1] == 'E' || s[1] == 'e'))     handleServo(s);
   else if (s.length() >= 4 &&
            (s[0] == 'T' || s[0] == 't') &&
            (s[1] == 'O' || s[1] == 'o'))     handleTone(s);

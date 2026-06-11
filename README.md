@@ -4,14 +4,16 @@ A re-architecture of the original `cue.ino` task. **All experiment logic now
 lives in Python**; the Arduino is reduced to a thin hardware I/O layer.
 
 ```
-┌────────────────────┐        serial         ┌──────────────────────────────┐
-│  Arduino firmware  │  ◀── commands ──────   │  Python controller            │
-│  cue_hw.ino        │   ─── IR events ──▶     │  run.py                       │
-│                    │                         │   ├─ turn_motor   (serial)    │
-│  • detects IR      │                         │   ├─ Display      (pygame)    │
-│  • drives pumps,   │                         │   ├─ CueExperiment(logic+CSV) │
-│    servo, (tone)   │                         │   └─ terminal keyboard input  │
-└────────────────────┘                         └──────────────────────────────┘
+┌────────────────────┐        serial         ┌──────────────────────────────────┐
+│  Arduino firmware  │  ◀── commands ──────   │  Python controller                │
+│  firmware.ino      │   ── detector ev. ─▶    │  run.py                           │
+│                    │                         │   ├─ Hardware (one SerialLink):   │
+│  • detects IR      │                         │   │    Motor / Reward / Tone /     │
+│  • drives pumps,   │                         │   │    IR_detector / IR_emitter   │
+│    servo, (tone)   │                         │   ├─ Display       (pygame)        │
+│                    │                         │   ├─ <experiment>  (logic + CSV)   │
+│                    │                         │   └─ terminal keyboard input       │
+└────────────────────┘                         └──────────────────────────────────┘
 ```
 
 The task can be driven by **real IR beam breaks and terminal keystrokes at the
@@ -22,11 +24,17 @@ Arduino attached.
 
 | File | Role |
 |------|------|
-| `cue_hw/cue_hw.ino` | Thin firmware: reports IR edges, actuates pumps / gate servo / IR emitters / tone (tone is **stubbed** — no buzzer wired yet). No trial logic. |
-| `turn_motor.py` | `turn_motor` class — the only thing that talks to the board. Sends actuation, surfaces IR events. Runs *detached* (terminal-only) if no port. |
-| `display.py` | `Display` class — the pygame stimulus screen (ported from the old `screen.py`): two figures, fig3 choice overlay, fullscreen/multi-monitor, ESC to quit. |
+| `firmware/firmware.ino` | Thin firmware: reports IR detector edges, actuates pumps / gate servo / IR emitters / tone (tone is **stubbed** — no buzzer wired yet). No trial logic. |
+| `serial_link.py` | `SerialLink` — owns the serial port + reader thread. Shared by all hardware classes. Runs *detached* (terminal-only) if no port. |
+| `motor.py` | `Motor` — the gate servo. `motor.turn(angle)`, plus `open()`/`close()` helpers. |
+| `reward.py` | `Reward` — the reward pumps. `left()`, `right()`, `deliver(side)`. |
+| `ir_detector.py` | `IR_detector` — the beam-break **detectors** (receivers). `poll_events()`. |
+| `ir_emitter.py` | `IR_emitter` — the IR **emitter LEDs**. `on()`, `off()`. Kept separate from the detectors. |
+| `tone.py` | `Tone` — buzzer. `play(freq, ms)` (firmware-stubbed). |
+| `hardware.py` | `Hardware` — bundles the above over one `SerialLink`: `hw.motor`, `hw.reward`, `hw.ir_detector`, `hw.ir_emitter`, `hw.tone`. |
+| `display.py` | `Display` — the pygame stimulus screen (ported from the old `screen.py`): two figures, fig3 choice overlay, fullscreen/multi-monitor, ESC to quit. |
 | `experiments/` | One module per experiment, each exposing `EXPERIMENT = <class>`. `choose_orientation.py` holds `CueExperiment` (the full task ported from `cue.ino`). |
-| `config.py` | All tunable settings (timing, probabilities, pins-as-names). |
+| `config.py` | All tunable settings (timing, probabilities, servo angles). |
 | `run.py` | Entry point — auto-discovers experiments, wires everything together, runs the loop. |
 
 ## Install
@@ -106,7 +114,7 @@ reaction_time_ms, reward
 ## Firmware serial protocol
 
 Commands **in** (one per line, case-insensitive):
-`PING`, `REWARD L`, `REWARD R`, `GATE OPEN`, `GATE CLOSE`, `EMIT ON`,
+`PING`, `REWARD L`, `REWARD R`, `SERVO <angle>`, `EMIT ON`,
 `EMIT OFF`, `TONE <hz> <ms>` (stubbed), `?`.
 
 Events **out**: `READY`, `IR <INNER_LEFT|CENTER|INNER_RIGHT> <BROKEN|CLEAR> <millis>`,
