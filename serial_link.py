@@ -214,16 +214,24 @@ class SerialLink:
             self._log(f"<- {line}")   # informational firmware chatter
 
     def confirm(self, timeout=3.0):
-        """Verify the board is actually responding. Sends PING and waits up to
-        `timeout` seconds for ANY line (a boot banner, READY, or PONG). Returns
-        True if the board talked back. Use this to distinguish 'port opened but
-        wrong/!flashed firmware' from a genuinely working link."""
+        """Verify the board is actually responding, and wait out its boot.
+
+        Opening the port resets the Arduino (DTR), so for ~1.5-2 s it's running
+        the bootloader and drops everything sent to it. A single PING fired right
+        after open is therefore usually lost. We re-ping every 0.4 s until the
+        board talks back (boot banner / READY / PONG) or `timeout` elapses, so by
+        the time this returns True the link is genuinely usable. Distinguishes
+        'port opened but wrong/!flashed firmware' from a working link."""
         if self._ser is None:
             return False
         if self._data_event.is_set():     # already heard from it (e.g. boot READY)
             return True
-        self.send("PING")
-        return self._data_event.wait(timeout)
+        deadline = time.monotonic() + timeout
+        while time.monotonic() < deadline:
+            self.send("PING")
+            if self._data_event.wait(0.4):
+                return True
+        return False
 
     def _log(self, msg):
         if self.verbose:

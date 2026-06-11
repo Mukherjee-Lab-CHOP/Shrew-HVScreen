@@ -42,6 +42,20 @@ class VariablesPanel(QtWidgets.QWidget):
             self._editors[key] = (w, vtype)
             self._form.addRow(var.get("label", key), w)
 
+    def set_values(self, values):
+        """Apply a params dict onto the current editors (unknown keys ignored)."""
+        for key, val in (values or {}).items():
+            editor = self._editors.get(key)
+            if not editor:
+                continue
+            w, vtype = editor
+            if vtype == "bool":
+                w.setChecked(bool(val))
+            elif vtype == "int":
+                w.setValue(int(val))
+            else:
+                w.setValue(float(val))
+
     def values(self):
         out = {}
         for key, (w, vtype) in self._editors.items():

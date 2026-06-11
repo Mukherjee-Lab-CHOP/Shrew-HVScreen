@@ -50,6 +50,8 @@ class MainWindow(QtWidgets.QMainWindow):
         self.stim_scene = StimulusScene()
         self._last_csv = None
         self._last_stage = -1
+        self._link_ready = False
+        self._editing_index = -1
 
         self._build_ui()
 
@@ -96,6 +98,7 @@ class MainWindow(QtWidgets.QMainWindow):
 
         # left: pipeline
         self.pipeline = PipelinePanel(self.registry)
+        self.pipeline.stage_selected.connect(self._load_stage_for_edit)
         hsplit.addWidget(self.pipeline)
 
         # middle: CSV + mirror
@@ -130,6 +133,8 @@ class MainWindow(QtWidgets.QMainWindow):
             spec = self.registry[first]["spec"]
             defaults = {v["key"]: v.get("default") for v in spec.get("variables", [])}
             self.pipeline.set_default_stage(first, defaults)
+        # start in "creating" mode (no stage selected)
+        self._new_stage()
 
     def _build_controls(self):
         row = QtWidgets.QHBoxLayout()
@@ -185,11 +190,27 @@ class MainWindow(QtWidgets.QMainWindow):
 
         top = QtWidgets.QWidget()
         layout = QtWidgets.QVBoxLayout(top)
-        layout.addWidget(QtWidgets.QLabel("<b>Experiment</b>"))
+
+        # bold header: are we creating a new stage or editing an existing one?
+        self.mode_label = QtWidgets.QLabel()
+        f = self.mode_label.font(); f.setBold(True); f.setPointSize(f.pointSize() + 1)
+        self.mode_label.setFont(f)
+        layout.addWidget(self.mode_label)
+
+        layout.addWidget(QtWidgets.QLabel("Experiment"))
         self.exp_combo = QtWidgets.QComboBox()
         self.exp_combo.addItems(sorted(self.registry))
         self.exp_combo.currentTextChanged.connect(self._on_experiment_selected)
         layout.addWidget(self.exp_combo)
+
+        trow = QtWidgets.QHBoxLayout()
+        trow.addWidget(QtWidgets.QLabel("Trials"))
+        self.trials_spin = QtWidgets.QSpinBox()
+        self.trials_spin.setRange(1, 100000)
+        self.trials_spin.setValue(10)
+        trow.addWidget(self.trials_spin)
+        trow.addStretch(1)
+        layout.addLayout(trow)
 
         vbox = QtWidgets.QGroupBox("Variables")
         vlay = QtWidgets.QVBoxLayout(vbox)
@@ -199,9 +220,15 @@ class MainWindow(QtWidgets.QMainWindow):
         scroll.setWidgetResizable(True)
         scroll.setWidget(self.variables)
         vlay.addWidget(scroll)
-        add_btn = QtWidgets.QPushButton("Add as pipeline stage →")
-        add_btn.clicked.connect(self._add_current_as_stage)
-        vlay.addWidget(add_btn)
+
+        btn_row = QtWidgets.QHBoxLayout()
+        self.save_btn = QtWidgets.QPushButton()
+        self.save_btn.clicked.connect(self._save_stage)
+        self.new_btn = QtWidgets.QPushButton("New stage")
+        self.new_btn.clicked.connect(self._new_stage)
+        btn_row.addWidget(self.save_btn)
+        btn_row.addWidget(self.new_btn)
+        vlay.addLayout(btn_row)
         layout.addWidget(vbox, 1)
         split.addWidget(top)
 
@@ -226,36 +253,81 @@ class MainWindow(QtWidgets.QMainWindow):
         self.variables.load_variables(spec.get("variables", []))
         self.graph.load_spec(spec)
 
-    def _add_current_as_stage(self):
-        name = self.exp_combo.currentText()
-        if not name:
+    def _current_stage(self):
+        """Build a stage dict from the right-panel editor's current state."""
+        return {
+            "experiment": self.exp_combo.currentText(),
+            "trials": self.trials_spin.value(),
+            "params": self.variables.values(),
+        }
+
+    def _load_stage_for_edit(self, index):
+        """A pipeline stage was selected (index >= 0) -> load it into the editor
+        in 'editing' mode; index < 0 -> back to 'creating' mode."""
+        stage = self.pipeline.get_stage(index) if index >= 0 else None
+        if stage is None:
+            self._editing_index = -1
+        else:
+            self._editing_index = index
+            self.exp_combo.setCurrentText(stage["experiment"])   # reloads variables/graph
+            self.trials_spin.setValue(int(stage.get("trials", 10)))
+            self.variables.set_values(stage.get("params") or {})
+        self._update_mode_label()
+
+    def _update_mode_label(self):
+        if self._editing_index >= 0:
+            self.mode_label.setText(f"✎ Editing stage {self._editing_index + 1}")
+            self.mode_label.setStyleSheet("color:#d35400;")
+            self.save_btn.setText("Save changes to stage")
+            self.new_btn.setEnabled(True)
+        else:
+            self.mode_label.setText("＋ Creating new stage")
+            self.mode_label.setStyleSheet("color:#2980b9;")
+            self.save_btn.setText("Add as pipeline stage →")
+            self.new_btn.setEnabled(False)
+
+    def _save_stage(self):
+        if not self.exp_combo.currentText():
             return
-        trials, ok = QtWidgets.QInputDialog.getInt(
-            self, "Add stage", f"How many trials of '{name}'?", 10, 1, 100000)
-        if not ok:
-            return
-        stage = {"experiment": name, "trials": trials, "params": self.variables.values()}
-        self.pipeline._stages.append(stage)      # reuse the panel's model
-        self.pipeline._refresh()
+        stage = self._current_stage()
+        if self._editing_index >= 0:
+            self.pipeline.update_stage(self._editing_index, stage)
+        else:
+            self.pipeline.add_stage_data(stage)   # appends and selects -> edit mode
+
+    def _new_stage(self):
+        """Deselect any stage and return the editor to 'creating' mode."""
+        self.pipeline.clear_selection()
+        self._editing_index = -1
+        self._update_mode_label()
 
     # ---- hardware ----------------------------------------------------------
     def _connect_hardware(self, port, baud):
-        self.serial_bar.set_connected(False, "connecting…")
-        QtWidgets.QApplication.processEvents()
+        self._link_ready = False
         if self.hw is not None:
             self.hw.close()
+            # Windows is slow to release a COM port; give it a moment before
+            # reopening so the new handle isn't half-broken.
+            QtCore.QThread.msleep(300)
+        self.serial_bar.set_connected(False, "booting…")
+        self.logs.add_print(f"[gui] opening {port} — waiting for the board to boot…")
+        QtWidgets.QApplication.processEvents()
+
         self.hw = Hardware(port=port, baud=baud, verbose=False)
         # surface every inbound firmware line in the prints pane, and mirror
         # outgoing commands (incl. manual ones) into the commands pane.
         self.hw.link.add_listener(self._inbound_line)
         self.hw.link.on_send = self.bus.push_command
         if self.hw.connect():
-            # Opening the port resets the Arduino; give it time to boot and
-            # answer (boot banner / READY / PONG) before deciding it's silent.
-            ok = self.hw.confirm(timeout=3.0)
+            # Opening the port resets the Arduino; confirm() re-pings across the
+            # ~2 s bootloader window, so once it returns True the link is truly
+            # usable — no need to "start the experiment to wake it up".
+            ok = self.hw.confirm(timeout=6.0)
+            self._link_ready = ok
             self.serial_bar.set_connected(True, f"{port}" + ("" if ok else " (no reply)"))
             self.logs.add_print(f"[gui] connected to {port}"
-                                + ("" if ok else " — board not responding (flash firmware?)"))
+                                + (" — board ready" if ok else
+                                   " — board not responding (flash firmware? wrong port?)"))
         else:
             self.serial_bar.set_connected(False, "open failed")
             self.logs.add_print(f"[gui] could not open {port}")
@@ -265,11 +337,17 @@ class MainWindow(QtWidgets.QMainWindow):
         run is in progress the combo is disabled, so this only fires when idle."""
         if self.worker is not None and self.worker.isRunning():
             return
-        # reconnect to the newly selected port (closes any existing link first)
+        # Already on this exact port and talking? Don't tear it down — reopening
+        # would reset the Arduino and drop commands for ~2 s for no reason.
+        if (self.hw is not None and self.hw.connected
+                and getattr(self.hw.link, "port", None) == port and self._link_ready):
+            self.logs.add_print(f"[gui] already connected to {port}.")
+            return
         self.logs.add_print(f"[gui] switching to {port}…")
         self._connect_hardware(port, self.serial_bar.baud())
 
     def _disconnect_hardware(self):
+        self._link_ready = False
         if self.hw is not None:
             self.hw.close()
             self.hw = None

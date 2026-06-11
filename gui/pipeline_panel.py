@@ -8,6 +8,17 @@ these variables." Stages can be added, edited, reordered, and removed.
 from PySide6 import QtCore, QtWidgets
 
 
+class _StageList(QtWidgets.QListWidget):
+    """A list that clears its selection when you click empty space, so clicking
+    below the stages returns the editor to 'creating' mode."""
+
+    def mousePressEvent(self, event):
+        if self.itemAt(event.pos()) is None:
+            self.clearSelection()
+            self.setCurrentRow(-1)
+        super().mousePressEvent(event)
+
+
 def _spec_defaults(registry, name):
     info = registry.get(name)
     spec = info["spec"] if info else {"variables": []}
@@ -64,6 +75,7 @@ class StageDialog(QtWidgets.QDialog):
 
 class PipelinePanel(QtWidgets.QWidget):
     pipeline_changed = QtCore.Signal()
+    stage_selected = QtCore.Signal(int)   # row (-1 when nothing is selected)
 
     def __init__(self, registry, parent=None):
         super().__init__(parent)
@@ -72,9 +84,13 @@ class PipelinePanel(QtWidgets.QWidget):
 
         layout = QtWidgets.QVBoxLayout(self)
         layout.addWidget(QtWidgets.QLabel("<b>Pipeline</b> (runs top → bottom)"))
+        layout.addWidget(QtWidgets.QLabel(
+            "Click a stage to edit it on the right; click empty space to deselect."))
 
-        self.list = QtWidgets.QListWidget()
-        self.list.itemDoubleClicked.connect(lambda _i: self.edit_stage())
+        self.list = _StageList()
+        # single click / arrow keys change the current row -> edit on the right
+        # panel; -1 (empty-space click) returns it to 'creating' mode
+        self.list.currentRowChanged.connect(self.stage_selected.emit)
         layout.addWidget(self.list, 1)
 
         row = QtWidgets.QHBoxLayout()
@@ -92,6 +108,31 @@ class PipelinePanel(QtWidgets.QWidget):
     # ---- model -------------------------------------------------------------
     def get_pipeline(self):
         return [dict(s) for s in self._stages]
+
+    def selected_index(self):
+        return self.list.currentRow()
+
+    def get_stage(self, index):
+        if 0 <= index < len(self._stages):
+            return dict(self._stages[index])
+        return None
+
+    def add_stage_data(self, stage):
+        """Append a stage from outside (the right-side editor) and select it."""
+        self._stages.append(dict(stage))
+        self._refresh()
+        self.list.setCurrentRow(len(self._stages) - 1)
+
+    def update_stage(self, index, stage):
+        """Replace an existing stage in place (kept selected)."""
+        if 0 <= index < len(self._stages):
+            self._stages[index] = dict(stage)
+            self._refresh()
+            self.list.setCurrentRow(index)
+
+    def clear_selection(self):
+        self.list.clearSelection()
+        self.list.setCurrentRow(-1)
 
     def _refresh(self):
         self.list.clear()
