@@ -82,6 +82,7 @@ class MainWindow(QtWidgets.QMainWindow):
         self.serial_bar = SerialBar()
         self.serial_bar.connect_requested.connect(self._connect_hardware)
         self.serial_bar.disconnect_requested.connect(self._disconnect_hardware)
+        self.serial_bar.port_changed.connect(self._on_port_changed)
         outer.addWidget(self.serial_bar)
         outer.addLayout(self._build_controls())
         outer.addLayout(self._build_command_controls())
@@ -258,6 +259,15 @@ class MainWindow(QtWidgets.QMainWindow):
         else:
             self.serial_bar.set_connected(False, "open failed")
             self.logs.add_print(f"[gui] could not open {port}")
+
+    def _on_port_changed(self, port):
+        """User picked a port in the dropdown: switch the live link to it. If a
+        run is in progress the combo is disabled, so this only fires when idle."""
+        if self.worker is not None and self.worker.isRunning():
+            return
+        # reconnect to the newly selected port (closes any existing link first)
+        self.logs.add_print(f"[gui] switching to {port}…")
+        self._connect_hardware(port, self.serial_bar.baud())
 
     def _disconnect_hardware(self):
         if self.hw is not None:

@@ -11,6 +11,7 @@ from serial_link import SerialLink
 class SerialBar(QtWidgets.QWidget):
     connect_requested = QtCore.Signal(str, int)   # (port, baud)
     disconnect_requested = QtCore.Signal()
+    port_changed = QtCore.Signal(str)             # user picked a port in the combo
 
     def __init__(self, parent=None):
         super().__init__(parent)
@@ -19,6 +20,9 @@ class SerialBar(QtWidgets.QWidget):
         layout.addWidget(QtWidgets.QLabel("COM:"))
         self.port_combo = QtWidgets.QComboBox()
         self.port_combo.setMinimumWidth(280)
+        # `activated` fires only on user interaction (not programmatic repopulate),
+        # so re-scanning the list won't spuriously trigger a reconnect.
+        self.port_combo.activated.connect(self._on_port_activated)
         layout.addWidget(self.port_combo)
 
         self.refresh_btn = QtWidgets.QPushButton("Scan")
@@ -81,6 +85,11 @@ class SerialBar(QtWidgets.QWidget):
             self.port_combo.setCurrentIndex(idx)
             return True
         return False
+
+    def _on_port_activated(self, index):
+        device = self.port_combo.itemData(index)
+        if device:
+            self.port_changed.emit(device)
 
     def current_port(self):
         return self.port_combo.currentData()
