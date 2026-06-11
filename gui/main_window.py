@@ -20,6 +20,7 @@ _ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 if _ROOT not in sys.path:
     sys.path.insert(0, _ROOT)
 
+from config import DEFAULT_PORT                      # noqa: E402
 from hardware import Hardware                       # noqa: E402
 
 from .bus import Bus                                # noqa: E402
@@ -57,6 +58,19 @@ class MainWindow(QtWidgets.QMainWindow):
         self._timer.setInterval(30)
         self._timer.timeout.connect(self._drain_bus)
         self._timer.start()
+
+        # once the window is up, auto-connect to the default port if present
+        QtCore.QTimer.singleShot(0, self._autoconnect_default)
+
+    def _autoconnect_default(self):
+        """If the default port (COM5) is present, select and connect to it so the
+        board is live without the user having to click Connect."""
+        if self.hw is not None:
+            return
+        self.serial_bar.scan_ports()
+        if self.serial_bar.select_port(DEFAULT_PORT):
+            self.logs.add_print(f"[gui] auto-connecting to {DEFAULT_PORT}…")
+            self._connect_hardware(DEFAULT_PORT, self.serial_bar.baud())
 
     # ---- UI construction ---------------------------------------------------
     def _build_ui(self):
@@ -235,7 +249,9 @@ class MainWindow(QtWidgets.QMainWindow):
         self.hw.link.add_listener(self._inbound_line)
         self.hw.link.on_send = self.bus.push_command
         if self.hw.connect():
-            ok = self.hw.confirm(timeout=1.5)
+            # Opening the port resets the Arduino; give it time to boot and
+            # answer (boot banner / READY / PONG) before deciding it's silent.
+            ok = self.hw.confirm(timeout=3.0)
             self.serial_bar.set_connected(True, f"{port}" + ("" if ok else " (no reply)"))
             self.logs.add_print(f"[gui] connected to {port}"
                                 + ("" if ok else " — board not responding (flash firmware?)"))

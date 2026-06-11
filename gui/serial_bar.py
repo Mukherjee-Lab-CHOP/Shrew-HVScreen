@@ -4,6 +4,7 @@ connect/disconnect, choose the stimulus monitor, and see link status.
 
 from PySide6 import QtCore, QtWidgets
 
+from config import DEFAULT_PORT
 from serial_link import SerialLink
 
 
@@ -60,11 +61,26 @@ class SerialBar(QtWidgets.QWidget):
             label = f"{p['device']} — {p['description']}{tag}" if p["description"] else \
                     f"{p['device']}{tag}"
             self.port_combo.addItem(label, userData=p["device"])
-        # re-select previous if still present
-        if current:
-            idx = self.port_combo.findData(current)
-            if idx >= 0:
-                self.port_combo.setCurrentIndex(idx)
+        # Re-select the previous choice if still present; otherwise prefer the
+        # default port (COM5) when the system reports it.
+        target = current or DEFAULT_PORT
+        idx = self.port_combo.findData(target)
+        if idx < 0 and current:                     # previous gone -> try default
+            idx = self.port_combo.findData(DEFAULT_PORT)
+        if idx >= 0:
+            self.port_combo.setCurrentIndex(idx)
+
+    def has_port(self, device):
+        """True if `device` is among the currently listed ports."""
+        return self.port_combo.findData(device) >= 0
+
+    def select_port(self, device):
+        """Select `device` in the combo if present; return True on success."""
+        idx = self.port_combo.findData(device)
+        if idx >= 0:
+            self.port_combo.setCurrentIndex(idx)
+            return True
+        return False
 
     def current_port(self):
         return self.port_combo.currentData()

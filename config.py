@@ -6,6 +6,7 @@ firmware stays a dumb I/O layer and all behaviour is tunable from one place.
 
 # ---- Serial ----------------------------------------------------------------
 DEFAULT_BAUD = 115200
+DEFAULT_PORT = "COM5"    # pre-selected / auto-connected in the GUI when present
 
 # ---- Trial timing (milliseconds) -------------------------------------------
 HOLD_MS           = 2000     # how long a beam must stay broken to count as a hold
