@@ -37,6 +37,7 @@ import pkgutil
 import sys
 import threading
 import time
+from datetime import datetime
 
 import experiments
 from config import DEFAULT_BAUD, DEFAULT_HIGHLIGHT_MS
@@ -44,6 +45,7 @@ from hardware import Hardware
 from display import Display
 
 DEFAULT_EXPERIMENT = "choose_orientation"
+DEFAULT_PORT = "COM5"          # use "auto" (or --port auto) to auto-detect
 
 # Stimulus images live in figures/ next to this script. Resolve them absolutely
 # so the display works regardless of the current working directory.
@@ -149,9 +151,9 @@ def main():
                    help=f"Which experiment to run (default: {DEFAULT_EXPERIMENT}).")
     p.add_argument("--list-experiments", action="store_true",
                    help="List available experiments and exit.")
-    p.add_argument("--port", default=None,
-                   help="Arduino serial port (e.g. COM3 or /dev/tty.usbmodem1101). "
-                        "Omit to run terminal-only.")
+    p.add_argument("--port", default=DEFAULT_PORT,
+                   help=f"Arduino serial port (default: {DEFAULT_PORT}). "
+                        f"Use 'auto' to auto-detect, or 'none' for terminal-only.")
     p.add_argument("--baud", type=int, default=DEFAULT_BAUD)
     p.add_argument("--fig1", default=FIG_HORIZONTAL,
                    help="Horizontal figure image (FIG1).")
@@ -209,7 +211,10 @@ def main():
 
     # ---- Arduino hardware --------------------------------------------------
     port = args.port
-    if port is None:
+    if port is not None and port.lower() == "none":
+        port = None                                  # explicit terminal-only
+        print("[info] --port none -> running terminal-only.")
+    elif port is not None and port.lower() == "auto":
         port, candidates = Hardware.auto_detect_port()
         if port:
             print(f"[info] auto-detected Arduino port: {port}")
@@ -218,6 +223,8 @@ def main():
                   f"choose one. Running terminal-only for now.")
         else:
             print("[info] no serial port found; running terminal-only.")
+    else:
+        print(f"[info] using serial port: {port}")
     hw = Hardware(port=port, baud=args.baud)
     if hw.connect():                   # opened the port (else detached)
         if hw.confirm(timeout=3.0):
@@ -237,7 +244,15 @@ def main():
 
     # ---- Experiment --------------------------------------------------------
     print(f"[info] running experiment: {args.experiment}")
-    exp = experiment_cls(hw, display, csv_path=args.csv)
+    # Data lands in  data/<experiment>/session_<timestamp>.csv  unless --csv given.
+    if args.csv:
+        csv_path = args.csv
+    else:
+        data_dir = os.path.join(HERE, "data", args.experiment)
+        os.makedirs(data_dir, exist_ok=True)
+        csv_path = os.path.join(data_dir,
+                                datetime.now().strftime("session_%Y%m%d_%H%M%S.csv"))
+    exp = experiment_cls(hw, display, csv_path=csv_path)
 
     get_keys = _start_key_thread()
 

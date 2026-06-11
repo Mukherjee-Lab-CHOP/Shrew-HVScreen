@@ -108,7 +108,9 @@ terminal.
 
 ## Output
 
-One CSV row per completed trial — `session_<timestamp>.csv` (or `--csv PATH`):
+One CSV row per completed trial, saved to
+`data/<experiment>/session_<timestamp>.csv` (override the full path with
+`--csv PATH`). The `data/` folder is git-ignored.
 
 ```
 trial_number, init_time_stamp, horizontal_reward_probability,

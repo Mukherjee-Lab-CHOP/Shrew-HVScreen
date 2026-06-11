@@ -18,6 +18,7 @@ Outputs:
 """
 
 import csv
+import os
 import random
 import time
 from datetime import datetime
@@ -70,6 +71,9 @@ class CueExperiment:
 
         # ---- CSV -----------------------------------------------------------
         self.csv_path = csv_path or datetime.now().strftime("session_%Y%m%d_%H%M%S.csv")
+        parent = os.path.dirname(self.csv_path)
+        if parent:
+            os.makedirs(parent, exist_ok=True)
         self._csv_file = open(self.csv_path, "w", newline="")
         self._csv = csv.writer(self._csv_file)
         self._csv.writerow([
