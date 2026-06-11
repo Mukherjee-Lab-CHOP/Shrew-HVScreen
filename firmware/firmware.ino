@@ -21,15 +21,17 @@
   ---------------------------------------------------------------------------
   PROTOCOL
   ---------------------------------------------------------------------------
-  Commands IN (one per line, '\n' terminated, case-insensitive):
-    PING            -> replies "PONG"
-    REWARD L        -> pulse LEFT pump for REWARD_MS
-    REWARD R        -> pulse RIGHT pump for REWARD_MS
-    SERVO <angle>   -> turn the gate servo to <angle> deg (0..180)
-    EMIT ON         -> IR emitters ON
-    EMIT OFF        -> IR emitters OFF
-    TONE <hz> <ms>  -> STUBBED (logs only; no buzzer wired yet)
-    ?               -> reprint the banner
+  Commands IN — each framed as  $<COMMAND><newline>  (the leading '$' marks the
+  start of a command; newline ends it). Case-insensitive. Examples:
+    $PING           -> replies "PONG"
+    $REWARD L       -> pulse LEFT pump for REWARD_MS
+    $REWARD R       -> pulse RIGHT pump for REWARD_MS
+    $SERVO <angle>  -> turn the gate servo to <angle> deg (0..180)
+    $EMIT ON        -> IR emitters ON
+    $EMIT OFF       -> IR emitters OFF
+    $TONE <hz> <ms> -> STUBBED (logs only; no buzzer wired yet)
+    $?              -> reprint the banner
+  Bytes received outside a $...command are ignored.
 
   Events / replies OUT:
     READY                              (once, at boot)
@@ -143,8 +145,8 @@ void printBanner() {
   Serial.println(F("################################################################"));
   Serial.print  (F("  BROKEN_IS_LOW = "));
   Serial.println(BROKEN_IS_LOW ? F("true") : F("false"));
-  Serial.println(F("  Commands: PING | REWARD L|R | SERVO <angle> |"));
-  Serial.println(F("            EMIT ON|OFF | TONE <hz> <ms> | ?"));
+  Serial.println(F("  Commands ($-prefixed): $PING | $REWARD L|R | $SERVO <angle>"));
+  Serial.println(F("            | $EMIT ON|OFF | $TONE <hz> <ms> | $?"));
   Serial.println(F("  Emits:    IR <CHANNEL> BROKEN|CLEAR <millis>"));
   Serial.println();
 }
@@ -221,6 +223,14 @@ void pollIR() {
 
 /******************** SETUP / LOOP ********************************************/
 String cmdBuf = "";
+bool inCommand = false;          // true between a '$' and its terminator
+
+void flushCommand() {
+  if (cmdBuf.length() > 0) {
+    handleCommand(cmdBuf);
+    cmdBuf = "";
+  }
+}
 
 void setup() {
   Serial.begin(115200);
@@ -249,18 +259,25 @@ void loop() {
   // 1) report IR edges
   pollIR();
 
-  // 2) drain inbound commands (line-buffered)
+  // 2) drain inbound commands.
+  //    Every command is framed as:  $<COMMAND><newline>
+  //    '$' marks the start of a command (and flushes any previous one);
+  //    newline (or the next '$') ends it. Bytes received outside a command
+  //    (before a '$') are ignored, so boot noise / stray input can't trigger
+  //    anything.
   while (Serial.available()) {
     char c = (char)Serial.read();
-    if (c == '\n' || c == '\r') {
-      if (cmdBuf.length() > 0) {
-        handleCommand(cmdBuf);
-        cmdBuf = "";
-      }
-    } else {
+    if (c == '$') {
+      flushCommand();          // end any in-progress command, start a new one
+      inCommand = true;
+    } else if (c == '\n' || c == '\r') {
+      flushCommand();
+      inCommand = false;
+    } else if (inCommand) {
       cmdBuf += c;
-      if (cmdBuf.length() > 48) cmdBuf = "";   // overflow guard
+      if (cmdBuf.length() > 48) { cmdBuf = ""; inCommand = false; }  // overflow guard
     }
+    // else: byte outside a command -> ignore
   }
 
   delay(2);

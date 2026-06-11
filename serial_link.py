@@ -9,7 +9,6 @@ logged no-op and no lines arrive — so the whole rig can be driven from the
 terminal with no Arduino attached.
 """
 
-import queue
 import threading
 import time
 
@@ -154,11 +153,14 @@ class SerialLink:
 
     # ---- io -----------------------------------------------------------------
     def send(self, line):
+        # Every command is framed with a leading '$' (start marker) and a
+        # trailing newline (terminator), so the firmware can reliably pick
+        # commands out of the serial stream.
         if self._ser is None:
-            self._log(f"(detached) -> {line}")
+            self._log(f"(detached) -> ${line}")
             return
         try:
-            self._ser.write((line + "\n").encode())
+            self._ser.write(("$" + line + "\n").encode())
         except Exception as e:
             self._log(f"write failed ({line!r}): {e}")
 

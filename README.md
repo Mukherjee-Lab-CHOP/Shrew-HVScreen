@@ -40,7 +40,7 @@ Arduino attached.
 ## Install
 
 ```bash
-pip install pyserial pygame
+pip install -r requirements.txt
 ```
 
 Both are optional: without `pyserial` the link runs detached; without `pygame`
@@ -120,9 +120,11 @@ reaction_time_ms, reward
 
 ## Firmware serial protocol
 
-Commands **in** (one per line, case-insensitive):
-`PING`, `REWARD L`, `REWARD R`, `SERVO <angle>`, `EMIT ON`,
-`EMIT OFF`, `TONE <hz> <ms>` (stubbed), `?`.
+Commands **in** are framed as `$<COMMAND><newline>` — a leading `$` marks the
+start of a command, newline ends it, and bytes outside a `$…command` are
+ignored. Case-insensitive:
+`$PING`, `$REWARD L`, `$REWARD R`, `$SERVO <angle>`, `$EMIT ON`,
+`$EMIT OFF`, `$TONE <hz> <ms>` (stubbed), `$?`.
 
 Events **out**: `READY`, `IR <INNER_LEFT|CENTER|INNER_RIGHT> <BROKEN|CLEAR> <millis>`,
 plus human-readable ACK lines. Wiring is unchanged from `cue.ino`.
@@ -146,6 +148,7 @@ Bluetooth don't confuse it) and then pings the board:
   2. **Port is held open** by the Arduino IDE Serial Monitor — close it.
   3. **Wrong port** — run `python run.py --list-ports` and pass `--port COMx`.
 
-Quick bench check after flashing: open the Arduino Serial Monitor at 115200,
-type `PING` → it should reply `PONG`; type `REWARD L` → the left pump pulses;
-type `SERVO 60` / `SERVO 180` → the gate moves.
+Quick bench check after flashing: open the Arduino Serial Monitor at 115200
+(set the line ending to **Newline**), type `$PING` → it should reply `PONG`;
+type `$REWARD L` → the left pump pulses; `$SERVO 60` / `$SERVO 180` → the gate
+moves.

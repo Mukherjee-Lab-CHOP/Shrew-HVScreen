@@ -1,0 +1,9 @@
+# Python dependencies for the cue experiment controller.
+#   pip install -r requirements.txt
+#
+# Both are technically optional — without pyserial the rig runs in detached
+# (terminal-only) mode, and without pygame (or with --no-display) it runs
+# headless — but you want both for normal operation.
+
+pyserial>=3.5    # serial link to the Arduino (SerialLink / Hardware)
+pygame>=2.1      # fullscreen stimulus display (Display)
