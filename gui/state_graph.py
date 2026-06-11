@@ -6,10 +6,13 @@ state machine and highlights the live current state during a run; nodes can be
 dragged to lay the graph out nicely.
 """
 
+import math
+
 from PySide6 import QtCore, QtGui, QtWidgets
 
 NODE_W = 170
 NODE_H = 56
+EDGE_COLOR = QtGui.QColor(190, 200, 215)
 
 
 class StateNode(QtWidgets.QGraphicsObject):
@@ -55,54 +58,83 @@ class StateNode(QtWidgets.QGraphicsObject):
 
 
 class TransitionEdge(QtWidgets.QGraphicsPathItem):
+    """A transition arrow. Endpoints are clipped to the node borders (so the
+    line never hides under a node), reciprocal edges curve to opposite sides so
+    they don't overlap, the arrowhead sits on the destination border, and the
+    label has an opaque background. Drawn ABOVE the nodes so it's never hidden."""
+
     def __init__(self, src, dst, label):
         super().__init__()
         self.src = src
         self.dst = dst
-        self.label = label
-        self.setZValue(0)
-        self.setPen(QtGui.QPen(QtGui.QColor(150, 160, 175), 1.8))
+        self.setZValue(2)                       # above nodes (z=1)
+        self.setPen(QtGui.QPen(EDGE_COLOR, 2.2))
+        self._tip = QtCore.QPointF()
+        self._from = QtCore.QPointF()
+        self._label_bg = QtWidgets.QGraphicsRectItem(self)
+        self._label_bg.setBrush(QtGui.QColor(34, 37, 44))
+        self._label_bg.setPen(QtGui.QPen(QtGui.QColor(90, 100, 115)))
         self._text = QtWidgets.QGraphicsSimpleTextItem(label, self)
-        self._text.setBrush(QtGui.QColor(170, 180, 195))
+        self._text.setBrush(QtGui.QColor(215, 222, 232))
         self.adjust()
 
+    def _border_point(self, node, toward):
+        c = node.center()
+        dx, dy = toward.x() - c.x(), toward.y() - c.y()
+        if dx == 0 and dy == 0:
+            return c
+        sx = (NODE_W / 2.0) / abs(dx) if dx else float("inf")
+        sy = (NODE_H / 2.0) / abs(dy) if dy else float("inf")
+        s = min(sx, sy)
+        return QtCore.QPointF(c.x() + dx * s, c.y() + dy * s)
+
     def adjust(self):
-        p1 = self.src.center()
-        p2 = self.dst.center()
-        path = QtGui.QPainterPath(p1)
         if self.src is self.dst:
-            # self-loop
-            r = QtCore.QRectF(p1.x() + NODE_W / 2 - 10, p1.y() - 50, 60, 50)
+            c = self.src.center()
+            r = QtCore.QRectF(c.x() - 28, c.y() - NODE_H / 2.0 - 46, 56, 46)
+            path = QtGui.QPainterPath()
             path.addEllipse(r)
-            self._text.setPos(r.center())
-        else:
-            path.lineTo(p2)
-            mid = (p1 + p2) / 2.0
-            self._text.setPos(mid.x() - self._text.boundingRect().width() / 2.0, mid.y() - 16)
+            self.setPath(path)
+            self._tip = QtCore.QPointF(r.center().x() + 10, r.bottom())
+            self._from = QtCore.QPointF(r.center().x() - 10, r.bottom())
+            self._place_label(QtCore.QPointF(r.center().x(), r.top() - 2))
+            return
+        cs, cd = self.src.center(), self.dst.center()
+        p1 = self._border_point(self.src, cd)
+        p2 = self._border_point(self.dst, cs)
+        dx, dy = p2.x() - p1.x(), p2.y() - p1.y()
+        length = math.hypot(dx, dy) or 1.0
+        nx, ny = -dy / length, dx / length          # perpendicular unit
+        offset = 26.0
+        mid = QtCore.QPointF((p1.x() + p2.x()) / 2.0, (p1.y() + p2.y()) / 2.0)
+        ctrl = QtCore.QPointF(mid.x() + nx * offset, mid.y() + ny * offset)
+        path = QtGui.QPainterPath(p1)
+        path.quadTo(ctrl, p2)
         self.setPath(path)
+        self._tip, self._from = p2, ctrl
+        self._place_label(ctrl)
+
+    def _place_label(self, pos):
+        br = self._text.boundingRect()
+        self._text.setPos(pos.x() - br.width() / 2.0, pos.y() - br.height() / 2.0)
+        pad = 3.0
+        self._label_bg.setRect(pos.x() - br.width() / 2.0 - pad,
+                               pos.y() - br.height() / 2.0 - pad,
+                               br.width() + 2 * pad, br.height() + 2 * pad)
+
+    def boundingRect(self):
+        return self.path().boundingRect().adjusted(-24, -24, 24, 24)
 
     def paint(self, painter, option, widget=None):
-        super().paint(painter, option, widget)
-        if self.src is self.dst:
-            return
-        # arrowhead pointing at dst's edge
-        p1 = self.src.center()
-        p2 = self.dst.center()
-        line = QtCore.QLineF(p1, p2)
-        if line.length() == 0:
-            return
-        # back off to the node border (~ half height)
-        line.setLength(max(0.0, line.length() - NODE_H / 2.0))
-        tip = line.p2()
-        ang = line.angle()
-        import math
-        a = math.radians(ang)
-        size = 10
-        left = QtCore.QPointF(tip.x() - size * math.cos(a - math.radians(25)),
-                              tip.y() + size * math.sin(a - math.radians(25)))
-        right = QtCore.QPointF(tip.x() - size * math.cos(a + math.radians(25)),
-                               tip.y() + size * math.sin(a + math.radians(25)))
-        painter.setBrush(QtGui.QColor(150, 160, 175))
+        super().paint(painter, option, widget)     # the curve
+        ang = math.atan2(self._tip.y() - self._from.y(), self._tip.x() - self._from.x())
+        size = 12
+        tip = self._tip
+        left = QtCore.QPointF(tip.x() - size * math.cos(ang - math.radians(24)),
+                              tip.y() - size * math.sin(ang - math.radians(24)))
+        right = QtCore.QPointF(tip.x() - size * math.cos(ang + math.radians(24)),
+                               tip.y() - size * math.sin(ang + math.radians(24)))
+        painter.setBrush(EDGE_COLOR)
         painter.setPen(QtCore.Qt.NoPen)
         painter.drawPolygon(QtGui.QPolygonF([tip, left, right]))
 

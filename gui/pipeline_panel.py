@@ -7,16 +7,26 @@ these variables." Stages can be added, edited, reordered, and removed.
 
 from PySide6 import QtCore, QtWidgets
 
-from .variables_panel import VariablesPanel
+
+def _spec_defaults(registry, name):
+    info = registry.get(name)
+    spec = info["spec"] if info else {"variables": []}
+    return {v["key"]: v.get("default") for v in spec.get("variables", [])}
 
 
 class StageDialog(QtWidgets.QDialog):
+    """Pick the experiment and trial count for a stage. Variables are edited on
+    the right-side experiment panel, not here — a stage keeps the params it was
+    created with (reset to defaults if you change its experiment)."""
+
     def __init__(self, registry, stage=None, parent=None):
         super().__init__(parent)
         self.setWindowTitle("Pipeline stage")
         self._registry = registry
-        layout = QtWidgets.QVBoxLayout(self)
+        self._orig_exp = stage["experiment"] if stage else None
+        self._orig_params = dict(stage["params"]) if stage and stage.get("params") else None
 
+        layout = QtWidgets.QVBoxLayout(self)
         form = QtWidgets.QFormLayout()
         self.exp_combo = QtWidgets.QComboBox()
         self.exp_combo.addItems(sorted(registry))
@@ -26,12 +36,8 @@ class StageDialog(QtWidgets.QDialog):
         form.addRow("Experiment", self.exp_combo)
         form.addRow("Trials", self.trials_spin)
         layout.addLayout(form)
-
-        layout.addWidget(QtWidgets.QLabel("Variable overrides:"))
-        self.vars = VariablesPanel()
-        layout.addWidget(self.vars)
-
-        self.exp_combo.currentTextChanged.connect(self._reload_vars)
+        layout.addWidget(QtWidgets.QLabel(
+            "Variables are set on the right-side experiment panel."))
 
         buttons = QtWidgets.QDialogButtonBox(
             QtWidgets.QDialogButtonBox.Ok | QtWidgets.QDialogButtonBox.Cancel)
@@ -42,20 +48,17 @@ class StageDialog(QtWidgets.QDialog):
         if stage:
             self.exp_combo.setCurrentText(stage["experiment"])
             self.trials_spin.setValue(stage["trials"])
-            self._reload_vars(stage["experiment"], stage.get("params"))
-        else:
-            self._reload_vars(self.exp_combo.currentText())
-
-    def _reload_vars(self, name, values=None):
-        info = self._registry.get(name)
-        spec = info["spec"] if info else {"variables": []}
-        self.vars.load_variables(spec.get("variables", []), values)
 
     def stage(self):
+        name = self.exp_combo.currentText()
+        if name == self._orig_exp and self._orig_params is not None:
+            params = self._orig_params          # keep existing overrides
+        else:
+            params = _spec_defaults(self._registry, name)
         return {
-            "experiment": self.exp_combo.currentText(),
+            "experiment": name,
             "trials": self.trials_spin.value(),
-            "params": self.vars.values(),
+            "params": params,
         }
 
 

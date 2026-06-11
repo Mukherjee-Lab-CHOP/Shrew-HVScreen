@@ -222,7 +222,9 @@ class Display:
         pygame.display.flip()
 
     def _render(self, img_left, img_right, overlay=None, overlay_side=None):
-        if img_left is None or img_right is None:
+        # A side whose image is None stays blank; only when BOTH are None is the
+        # whole screen black.
+        if img_left is None and img_right is None:
             self._set_black()
             return
         sw, sh = self._screen.get_size()
@@ -231,26 +233,27 @@ class Display:
         gap = int(sw * 0.04)
         half_w = (sw - gap) // 2
         max_h = int(sh * 0.9)
+        cy = sh // 2
 
         def fit(img):
             iw, ih = img.get_size()
             scale = min(half_w / iw, max_h / ih)
             return pygame.transform.smoothscale(img, (int(iw * scale), int(ih * scale)))
 
-        left_scaled = fit(img_left)
-        right_scaled = fit(img_right)
-        cy = sh // 2
-        left_rect = left_scaled.get_rect(center=(half_w // 2, cy))
-        right_rect = right_scaled.get_rect(center=(half_w + gap + half_w // 2, cy))
-
-        self._screen.blit(left_scaled, left_rect)
-        self._screen.blit(right_scaled, right_rect)
-
-        if overlay is not None:
-            ov = pygame.transform.smoothscale(overlay, left_scaled.get_size())
-            if overlay_side == "L":
+        if img_left is not None:
+            left_scaled = fit(img_left)
+            left_rect = left_scaled.get_rect(center=(half_w // 2, cy))
+            self._screen.blit(left_scaled, left_rect)
+            if overlay is not None and overlay_side == "L":
+                ov = pygame.transform.smoothscale(overlay, left_scaled.get_size())
                 self._screen.blit(ov, left_rect)
-            elif overlay_side == "R":
+
+        if img_right is not None:
+            right_scaled = fit(img_right)
+            right_rect = right_scaled.get_rect(center=(half_w + gap + half_w // 2, cy))
+            self._screen.blit(right_scaled, right_rect)
+            if overlay is not None and overlay_side == "R":
+                ov = pygame.transform.smoothscale(overlay, right_scaled.get_size())
                 self._screen.blit(ov, right_rect)
 
         pygame.display.flip()

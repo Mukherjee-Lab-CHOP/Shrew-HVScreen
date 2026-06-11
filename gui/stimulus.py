@@ -85,15 +85,19 @@ class StimulusScene(QtCore.QObject):
         self.scene.clear()
         rect = self.scene.sceneRect()
         w, h = rect.width(), rect.height()
-        if self._cur_l is None or self._cur_r is None:
+        # A side whose code is falsy (0 / None) stays blank (black); only when
+        # BOTH are blank is the whole screen black.
+        if not self._cur_l and not self._cur_r:
             return
         gap = w * 0.04
         half = (w - gap) / 2.0
         max_h = h * 0.9
-        self._place(self._pix.get(self._cur_l), half / 2.0, h / 2.0, half, max_h,
-                    self._overlay if self._overlay_side == "L" else None)
-        self._place(self._pix.get(self._cur_r), half + gap + half / 2.0, h / 2.0, half, max_h,
-                    self._overlay if self._overlay_side == "R" else None)
+        if self._cur_l:
+            self._place(self._pix.get(self._cur_l), half / 2.0, h / 2.0, half, max_h,
+                        self._overlay if self._overlay_side == "L" else None)
+        if self._cur_r:
+            self._place(self._pix.get(self._cur_r), half + gap + half / 2.0, h / 2.0,
+                        half, max_h, self._overlay if self._overlay_side == "R" else None)
 
     def _place(self, pm, cx, cy, max_w, max_h, overlay):
         if pm is None or pm.isNull():

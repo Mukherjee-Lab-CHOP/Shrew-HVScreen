@@ -25,7 +25,10 @@ class VariablesPanel(QtWidgets.QWidget):
             key = var["key"]
             vtype = var.get("type", "float")
             default = values.get(key, var.get("default", 0))
-            if vtype == "int":
+            if vtype == "bool":
+                w = QtWidgets.QCheckBox()
+                w.setChecked(bool(default))
+            elif vtype == "int":
                 w = QtWidgets.QSpinBox()
                 w.setRange(int(var.get("min", 0)), int(var.get("max", 1_000_000)))
                 w.setSingleStep(int(var.get("step", 1)))
@@ -42,7 +45,12 @@ class VariablesPanel(QtWidgets.QWidget):
     def values(self):
         out = {}
         for key, (w, vtype) in self._editors.items():
-            out[key] = int(w.value()) if vtype == "int" else float(w.value())
+            if vtype == "bool":
+                out[key] = w.isChecked()
+            elif vtype == "int":
+                out[key] = int(w.value())
+            else:
+                out[key] = float(w.value())
         return out
 
     def set_enabled(self, enabled):

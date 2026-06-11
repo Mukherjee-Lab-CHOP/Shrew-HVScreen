@@ -22,6 +22,8 @@ class Bus:
         self._status = {
             "state": None,
             "trial_num": 0,
+            "trials_done": 0,
+            "stage_target": 0,
             "stage_index": -1,
             "stage_label": "",
             "csv_path": None,

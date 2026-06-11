@@ -86,6 +86,17 @@ python run.py --no-display                   # logic + hardware, no screen
 
 `--experiment` selects which experiment to run (default `choose_orientation`).
 
+### Included experiments
+
+| Module | What it does | Key variables |
+|--------|--------------|---------------|
+| `choose_orientation` | H/V cue task: hold center, choose left/right orientation | `P_STIM_HORIZONTAL`, `P_STIM_VERTICAL`, `REWARD_STEP` (chance added per unchosen trial), `HOLD_MS`, `CHOICE_TIMEOUT_MS`, `ITI_MS` |
+| `consecutive_reward` | Nose-poke for reward, but a side stops paying after too many in a row | `MAX_CONSECUTIVE` (max same-side streak), `HOLD_MS`, `ITI_MS` |
+| `vertical_random_side` | Vertical target on a random side; choosing it pays at a set chance | `REWARD_PERCENT` (other side 0%), `SHOW_OTHER_ORIENTATION` (bool), `HOLD_MS`, `CHOICE_TIMEOUT_MS`, `ITI_MS` |
+
+Each exposes a `SPEC` (variables + state graph) so the GUI can build its editors
+and node graph automatically.
+
 ### Adding another experiment
 
 Create a new module in `experiments/`, e.g. `experiments/my_task.py`, defining a

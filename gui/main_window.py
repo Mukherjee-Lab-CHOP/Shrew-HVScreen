@@ -70,6 +70,7 @@ class MainWindow(QtWidgets.QMainWindow):
         self.serial_bar.disconnect_requested.connect(self._disconnect_hardware)
         outer.addWidget(self.serial_bar)
         outer.addLayout(self._build_controls())
+        outer.addLayout(self._build_command_controls())
 
         # main vertical splitter: [panels] over [logs]
         vsplit = QtWidgets.QSplitter(QtCore.Qt.Vertical)
@@ -139,11 +140,37 @@ class MainWindow(QtWidgets.QMainWindow):
         row.addWidget(self.run_status)
         return row
 
-    def _build_right_panel(self):
-        w = QtWidgets.QWidget()
-        layout = QtWidgets.QVBoxLayout(w)
-        layout.addWidget(QtWidgets.QLabel("<b>Experiment</b>"))
+    def _build_command_controls(self):
+        """Buttons + a free-text field to send raw commands straight to the
+        Arduino (independent of any running experiment). Everything sent here
+        also shows up in the 'Commands out' log."""
+        row = QtWidgets.QHBoxLayout()
+        row.addWidget(QtWidgets.QLabel("Send to Arduino:"))
+        for label, cmd in (("Gate open", "SERVO 60"), ("Gate close", "SERVO 180"),
+                           ("Reward L", "REWARD L"), ("Reward R", "REWARD R"),
+                           ("Emit on", "EMIT ON"), ("Emit off", "EMIT OFF"),
+                           ("Ping", "PING")):
+            b = QtWidgets.QPushButton(label)
+            b.clicked.connect(lambda _checked=False, c=cmd: self._send_raw(c))
+            row.addWidget(b)
 
+        self.cmd_edit = QtWidgets.QLineEdit()
+        self.cmd_edit.setPlaceholderText("custom command, e.g.  SERVO 90  or  TONE 1000 200")
+        self.cmd_edit.returnPressed.connect(self._send_custom)
+        row.addWidget(self.cmd_edit, 1)
+        send_btn = QtWidgets.QPushButton("Send")
+        send_btn.clicked.connect(self._send_custom)
+        row.addWidget(send_btn)
+        return row
+
+    def _build_right_panel(self):
+        # Vertical splitter so the state-machine area can be resized vs. the
+        # experiment/variables area.
+        split = QtWidgets.QSplitter(QtCore.Qt.Vertical)
+
+        top = QtWidgets.QWidget()
+        layout = QtWidgets.QVBoxLayout(top)
+        layout.addWidget(QtWidgets.QLabel("<b>Experiment</b>"))
         self.exp_combo = QtWidgets.QComboBox()
         self.exp_combo.addItems(sorted(self.registry))
         self.exp_combo.currentTextChanged.connect(self._on_experiment_selected)
@@ -152,19 +179,28 @@ class MainWindow(QtWidgets.QMainWindow):
         vbox = QtWidgets.QGroupBox("Variables")
         vlay = QtWidgets.QVBoxLayout(vbox)
         self.variables = VariablesPanel()
-        vlay.addWidget(self.variables)
+        # scroll so every variable is reachable no matter how many there are
+        scroll = QtWidgets.QScrollArea()
+        scroll.setWidgetResizable(True)
+        scroll.setWidget(self.variables)
+        vlay.addWidget(scroll)
         add_btn = QtWidgets.QPushButton("Add as pipeline stage →")
         add_btn.clicked.connect(self._add_current_as_stage)
         vlay.addWidget(add_btn)
-        layout.addWidget(vbox)
+        layout.addWidget(vbox, 1)
+        split.addWidget(top)
 
-        layout.addWidget(QtWidgets.QLabel("<b>State machine</b>"))
+        bottom = QtWidgets.QWidget()
+        blay = QtWidgets.QVBoxLayout(bottom)
+        blay.addWidget(QtWidgets.QLabel("<b>State machine</b> (drag to resize / move nodes)"))
         self.graph = StateGraphView()
-        layout.addWidget(self.graph, 1)
+        blay.addWidget(self.graph, 1)
+        split.addWidget(bottom)
 
+        split.setSizes([360, 420])
         if self.registry:
             self._on_experiment_selected(self.exp_combo.currentText())
-        return w
+        return split
 
     # ---- experiment selection ----------------------------------------------
     def _on_experiment_selected(self, name):
@@ -194,8 +230,10 @@ class MainWindow(QtWidgets.QMainWindow):
         if self.hw is not None:
             self.hw.close()
         self.hw = Hardware(port=port, baud=baud, verbose=False)
-        # surface every inbound firmware line in the prints pane
+        # surface every inbound firmware line in the prints pane, and mirror
+        # outgoing commands (incl. manual ones) into the commands pane.
         self.hw.link.add_listener(self._inbound_line)
+        self.hw.link.on_send = self.bus.push_command
         if self.hw.connect():
             ok = self.hw.confirm(timeout=1.5)
             self.serial_bar.set_connected(True, f"{port}" + ("" if ok else " (no reply)"))
@@ -216,6 +254,27 @@ class MainWindow(QtWidgets.QMainWindow):
         self.bus.push_print(f"<- {line}")
         return False        # not "handled"; let other listeners (IR) see it too
 
+    def _ensure_hw(self):
+        """Return a Hardware to send through, creating a detached one (commands
+        logged, not sent) if nothing is connected."""
+        if self.hw is None:
+            self.hw = Hardware(port=None, verbose=False)
+            self.hw.link.add_listener(self._inbound_line)
+            self.hw.connect()
+            self.logs.add_print("[gui] no Arduino connected — commands are logged, not sent.")
+        self.hw.link.on_send = self.bus.push_command
+        return self.hw
+
+    def _send_raw(self, cmd):
+        """Send a raw command string to the Arduino (link adds the $…\\n framing)."""
+        self._ensure_hw().link.send(cmd)
+
+    def _send_custom(self):
+        text = self.cmd_edit.text().strip()
+        if text:
+            self._send_raw(text)
+            self.cmd_edit.clear()
+
     # ---- run control -------------------------------------------------------
     def _start_run(self):
         if self.worker is not None and self.worker.isRunning():
@@ -224,11 +283,7 @@ class MainWindow(QtWidgets.QMainWindow):
         if not pipeline:
             QtWidgets.QMessageBox.warning(self, "No pipeline", "Add at least one stage.")
             return
-        if self.hw is None:                       # allow detached test runs
-            self.hw = Hardware(port=None, verbose=False)
-            self.hw.connect()
-            self.logs.add_print("[gui] no Arduino connected — running detached "
-                                "(commands are logged, not sent).")
+        self._ensure_hw()                          # allow detached test runs
 
         # open the stimulus window on the chosen monitor
         self.stim_window = StimulusWindow(self.stim_scene.scene)
@@ -279,9 +334,12 @@ class MainWindow(QtWidgets.QMainWindow):
         self.csv_view.refresh()
         if status["running"]:
             stage = status["stage_label"]
+            target = status["stage_target"]
+            done = status["trials_done"]
+            left = max(0, target - done) if target else 0
             self.run_status.setText(
-                f"running — stage '{stage}'  trial {status['trial_num']}  "
-                f"[{status['state'] or ''}]")
+                f"running — stage '{stage}'  trial {done}/{target}  "
+                f"({left} left)  [{status['state'] or ''}]")
 
     def _apply_render(self, op):
         kind = op[0]

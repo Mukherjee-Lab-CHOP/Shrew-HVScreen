@@ -104,9 +104,15 @@ class PipelineWorker(QtCore.QThread):
         exp = self._build_experiment(info["class"], csv_path, params)
         if exp is None:
             return
-        idle_state = exp.state          # state it returns to between trials
+
+        def completed(e):
+            # uniform "trials finished" count; fall back to trial_num
+            return int(getattr(e, "completed_trials", getattr(e, "trial_num", 0)))
+
+        self._bus.set_status(stage_target=target, trials_done=completed(exp),
+                             trial_num=getattr(exp, "trial_num", 0))
         last_state = None
-        last_trial = -1
+        last_done = -1
         try:
             while not self._stop.is_set():
                 keys = self._bus.drain_keys()
@@ -116,14 +122,16 @@ class PipelineWorker(QtCore.QThread):
                     last_state = exp.state
                     self._bus.set_status(state=exp.state)
                     self._bus.push_event("state", exp.state)
-                if exp.trial_num != last_trial:
-                    last_trial = exp.trial_num
-                    self._bus.set_status(trial_num=exp.trial_num)
+                done = completed(exp)
+                if done != last_done:
+                    last_done = done
+                    self._bus.set_status(trials_done=done,
+                                         trial_num=getattr(exp, "trial_num", done))
 
-                # stage complete: requested trials done AND back to idle
-                if exp.trial_num >= target and exp.state == idle_state and target > 0:
+                # stage complete: requested number of trials finished
+                if target > 0 and done >= target:
                     self._bus.push_print(
-                        f"=== STAGE {index+1} complete: {exp.trial_num} trials ===")
+                        f"=== STAGE {index+1} complete: {done} trials ===")
                     break
                 if result == "QUIT":
                     self._stop.set()

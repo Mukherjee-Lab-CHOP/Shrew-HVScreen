@@ -49,12 +49,16 @@ class CueExperiment:
         params = params or {}
         self.P_STIM_HORIZONTAL = float(params.get("P_STIM_HORIZONTAL", P_STIM_HORIZONTAL))
         self.P_STIM_VERTICAL   = float(params.get("P_STIM_VERTICAL", P_STIM_VERTICAL))
+        # How much an orientation's reward chance rises per trial it goes
+        # unchosen (added on top of its base P, clamped to 1.0). 0 = no change.
+        self.REWARD_STEP       = float(params.get("REWARD_STEP", 0.1))
         self.HOLD_MS           = int(params.get("HOLD_MS", HOLD_MS))
         self.CHOICE_TIMEOUT_MS = int(params.get("CHOICE_TIMEOUT_MS", CHOICE_TIMEOUT_MS))
         self.ITI_MS            = int(params.get("ITI_MS", ITI_MS))
 
         # ---- reward / stimulus state (mirrors cue.ino globals) -------------
         self.trial_num = 0
+        self.completed_trials = 0   # trials finished (what the pipeline counts)
         self.horizontal_rewarded = False
         self.vertical_rewarded = False
         self.left_fig = ORIENT_NONE
@@ -169,13 +173,16 @@ class CueExperiment:
 
     # ---- trial logic (ported from cue.ino) ---------------------------------
     def _randomize_rewards(self):
+        # Effective chance = base P + REWARD_STEP per trial unchosen (clamped).
         if not self.horizontal_rewarded:
-            self.last_h_chance = 1 - (1 - self.P_STIM_HORIZONTAL) ** (self.horizontal_unchosen + 1)
+            self.last_h_chance = min(1.0, self.P_STIM_HORIZONTAL
+                                     + self.REWARD_STEP * self.horizontal_unchosen)
             self.horizontal_rewarded = random.random() < self.last_h_chance
         else:
             self.last_h_chance = 1.0
         if not self.vertical_rewarded:
-            self.last_v_chance = 1 - (1 - self.P_STIM_VERTICAL) ** (self.vertical_unchosen + 1)
+            self.last_v_chance = min(1.0, self.P_STIM_VERTICAL
+                                     + self.REWARD_STEP * self.vertical_unchosen)
             self.vertical_rewarded = random.random() < self.last_v_chance
         else:
             self.last_v_chance = 1.0
@@ -255,6 +262,7 @@ class CueExperiment:
     def _end_trial(self, choice):
         # Clear the screen (deferred behind any active choice overlay) and
         # enter the ITI. Gate stays open until the ITI ends.
+        self.completed_trials += 1
         self.display.black()
         self.state = STATE_ITI
         self.state_start = self.clock()
@@ -359,6 +367,8 @@ SPEC = {
          "default": P_STIM_HORIZONTAL, "min": 0.0, "max": 1.0, "step": 0.05},
         {"key": "P_STIM_VERTICAL", "label": "P(vertical reward)", "type": "float",
          "default": P_STIM_VERTICAL, "min": 0.0, "max": 1.0, "step": 0.05},
+        {"key": "REWARD_STEP", "label": "Reward change per unchosen", "type": "float",
+         "default": 0.1, "min": 0.0, "max": 1.0, "step": 0.05},
         {"key": "HOLD_MS", "label": "Hold time (ms)", "type": "int",
          "default": HOLD_MS, "min": 0, "max": 10000, "step": 100},
         {"key": "CHOICE_TIMEOUT_MS", "label": "Choice timeout (ms)", "type": "int",
