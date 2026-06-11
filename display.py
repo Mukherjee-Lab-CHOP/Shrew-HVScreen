@@ -64,8 +64,9 @@ def _windows_display_geometries():
 
 class Display:
     def __init__(self, fig1="fig1.png", fig2="fig2.png", fig3="fig3.png",
-                 screen_index=0, windowed=False,
+                 screen_index=None, windowed=False,
                  highlight_ms=DEFAULT_HIGHLIGHT_MS, enabled=True):
+        # screen_index None = auto (prefer external/HDMI display, else primary).
         self.fig1_path = fig1
         self.fig2_path = fig2
         self.fig3_path = fig3
@@ -109,32 +110,39 @@ class Display:
             return False
 
     def _open_window(self):
-        rect = None
+        pygame.init()
+        pygame.display.init()
+
+        # How many monitors are there?
+        sizes = []
+        if hasattr(pygame.display, "get_desktop_sizes"):
+            sizes = pygame.display.get_desktop_sizes()
+        ndisp = max(len(sizes), 1)
+
+        # Resolve the target monitor. screen_index None = "auto": prefer the
+        # external/HDMI screen (index 1) when present, else fall back to 0.
+        if self.screen_index is None:
+            self.screen_index = 1 if ndisp >= 2 else 0
+            _info(f"auto-selected display {self.screen_index} of {ndisp}"
+                  + ("" if ndisp >= 2 else " (no external display; using primary)"))
+        elif self.screen_index >= ndisp:
+            _info(f"display {self.screen_index} not present ({ndisp} detected); "
+                  f"falling back to 0.")
+            self.screen_index = 0
+
         rects = _windows_display_geometries()
-        if 0 <= self.screen_index < len(rects):
-            rect = rects[self.screen_index]
+        rect = rects[self.screen_index] if 0 <= self.screen_index < len(rects) else None
 
         if rect is not None and not self.windowed:
             left, top, w, h = rect
             os.environ["SDL_VIDEO_WINDOW_POS"] = f"{left},{top}"
-            pygame.init()
-            pygame.display.init()
             self._screen = pygame.display.set_mode((w, h), pygame.NOFRAME)
             _info(f"borderless window at {left},{top} {w}x{h}")
         elif self.windowed:
-            pygame.init()
-            pygame.display.init()
             self._screen = pygame.display.set_mode((1280, 720))
             _info("windowed 1280x720")
         else:
-            os.environ.setdefault("SDL_VIDEO_FULLSCREEN_DISPLAY", str(self.screen_index))
-            pygame.init()
-            pygame.display.init()
-            size = (0, 0)
-            if hasattr(pygame.display, "get_desktop_sizes"):
-                sizes = pygame.display.get_desktop_sizes()
-                if 0 <= self.screen_index < len(sizes):
-                    size = sizes[self.screen_index]
+            size = sizes[self.screen_index] if 0 <= self.screen_index < len(sizes) else (0, 0)
             self._screen = pygame.display.set_mode(size, pygame.FULLSCREEN,
                                                    display=self.screen_index)
             _info(f"fullscreen on display {self.screen_index} {size}")

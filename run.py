@@ -72,6 +72,27 @@ def discover_experiments():
     return registry
 
 
+def _list_displays():
+    """Print every monitor pygame can see, with the --screen index to target it."""
+    try:
+        import pygame
+    except ImportError:
+        print("pygame not installed — cannot list displays.")
+        return
+    pygame.init()
+    pygame.display.init()
+    sizes = pygame.display.get_desktop_sizes()
+    print(f"pygame detects {len(sizes)} display(s):")
+    for i, (w, h) in enumerate(sizes):
+        tag = "  (primary/built-in)" if i == 0 else "  (external/HDMI?)"
+        print(f"  --screen {i}   ->   {w} x {h}{tag}")
+    if len(sizes) == 1:
+        print("\nOnly ONE display detected. If an HDMI screen is plugged in, macOS is")
+        print("probably MIRRORING it. Turn OFF mirroring (System Settings > Displays >")
+        print("'Use as Separate Display' / uncheck Mirror) so it shows as --screen 1.")
+    pygame.quit()
+
+
 def _first_doc_line(cls):
     doc = cls.__doc__
     if not doc:                                   # fall back to the module docstring
@@ -138,14 +159,24 @@ def main():
                    help="Vertical figure image (FIG2).")
     p.add_argument("--fig3", default=FIG_OVERLAY,
                    help="Choice-highlight overlay image.")
-    p.add_argument("--screen", type=int, default=0, help="Monitor index for fullscreen.")
+    p.add_argument("--screen", type=int, default=None,
+                   help="Monitor index for fullscreen (0 = primary/built-in, "
+                        "1 = first external/HDMI, ...). Default: auto — prefer the "
+                        "external/HDMI screen when present, else primary. "
+                        "See --list-displays.")
     p.add_argument("--windowed", action="store_true", help="Windowed instead of fullscreen.")
     p.add_argument("--no-display", action="store_true", help="Run without the pygame screen.")
     p.add_argument("--highlight_ms", type=int, default=DEFAULT_HIGHLIGHT_MS,
                    help="How long the choice overlay stays up.")
     p.add_argument("--csv", default=None, help="CSV output path (default: session_<timestamp>.csv).")
     p.add_argument("--list-ports", action="store_true", help="List serial ports and exit.")
+    p.add_argument("--list-displays", action="store_true",
+                   help="List detected monitors with their --screen index and exit.")
     args = p.parse_args()
+
+    if args.list_displays:
+        _list_displays()
+        return
 
     if args.list_experiments:
         if registry:
