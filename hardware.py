@@ -51,12 +51,20 @@ class Hardware:
     def available_ports():
         return SerialLink.available_ports()
 
+    @staticmethod
+    def auto_detect_port():
+        return SerialLink.auto_detect_port()
+
     @property
     def connected(self):
         return self.link.connected
 
     def connect(self):
         return self.link.connect()
+
+    def confirm(self, timeout=3.0):
+        """True if the board responds (PING/READY) — i.e. firmware is flashed."""
+        return self.link.confirm(timeout)
 
     def close(self):
         try:

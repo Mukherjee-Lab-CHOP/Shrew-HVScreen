@@ -33,6 +33,7 @@ class SerialLink:
         self._stop = threading.Event()
         self._listeners = []
         self._connected = False
+        self._data_event = threading.Event()   # set when any line arrives
 
     # ---- configuration -----------------------------------------------------
     def set_serial_port(self, port):
@@ -49,10 +50,52 @@ class SerialLink:
 
     @staticmethod
     def available_ports():
-        """List candidate serial ports (empty if pyserial is unavailable)."""
+        """List every serial port device (empty if pyserial is unavailable)."""
         if list_ports is None:
             return []
         return [p.device for p in list_ports.comports()]
+
+    @staticmethod
+    def auto_detect_port():
+        """Best guess at the Arduino's port.
+
+        Prefers real USB serial devices (those with a USB VID), and on macOS
+        collapses the /dev/cu.* and /dev/tty.* twin nodes that point at the same
+        device (preferring the cu.* node, which is what you open for I/O).
+
+        Returns (chosen_port_or_None, candidate_devices). chosen_port is set only
+        when the de-duplicated candidate list has exactly one entry.
+        """
+        if list_ports is None:
+            return None, []
+        infos = list(list_ports.comports())
+        if not infos:
+            return None, []
+
+        # Prefer devices that look like real USB serial adapters (have a VID).
+        usb = [p for p in infos if getattr(p, "vid", None) is not None]
+        pool = usb or infos
+        devices = [p.device for p in pool]
+
+        # Collapse macOS cu./tty. twins (same suffix), preferring cu.
+        order = []
+        index_by_suffix = {}
+        for d in devices:
+            suffix = d
+            for pre in ("/dev/cu.", "/dev/tty."):
+                if d.startswith(pre):
+                    suffix = d[len(pre):]
+                    break
+            if suffix in index_by_suffix:
+                i = index_by_suffix[suffix]
+                if d.startswith("/dev/cu."):   # prefer the cu. node
+                    order[i] = d
+                continue
+            index_by_suffix[suffix] = len(order)
+            order.append(d)
+
+        chosen = order[0] if len(order) == 1 else None
+        return chosen, order
 
     @property
     def connected(self):
@@ -90,6 +133,7 @@ class SerialLink:
             pass
 
         self._stop.clear()
+        self._data_event.clear()
         self._reader = threading.Thread(target=self._read_loop, daemon=True)
         self._reader.start()
         self._connected = True
@@ -135,6 +179,7 @@ class SerialLink:
                     self._dispatch(line)
 
     def _dispatch(self, line):
+        self._data_event.set()        # any line proves the board is talking
         handled = False
         for fn in self._listeners:
             try:
@@ -144,6 +189,18 @@ class SerialLink:
                 self._log(f"listener error: {e}")
         if not handled:
             self._log(f"<- {line}")   # informational firmware chatter
+
+    def confirm(self, timeout=3.0):
+        """Verify the board is actually responding. Sends PING and waits up to
+        `timeout` seconds for ANY line (a boot banner, READY, or PONG). Returns
+        True if the board talked back. Use this to distinguish 'port opened but
+        wrong/!flashed firmware' from a genuinely working link."""
+        if self._ser is None:
+            return False
+        if self._data_event.is_set():     # already heard from it (e.g. boot READY)
+            return True
+        self.send("PING")
+        return self._data_event.wait(timeout)
 
     def _log(self, msg):
         if self.verbose:

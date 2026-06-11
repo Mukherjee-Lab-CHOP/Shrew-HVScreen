@@ -130,3 +130,22 @@ plus human-readable ACK lines. Wiring is unchanged from `cue.ino`.
 > **Tone is stubbed.** `TONE` is parsed and logged but drives no hardware yet.
 > When a buzzer is wired to `BUZZER_PIN` (pin 9), enable the `tone()` line in
 > `toneStub()`.
+
+## Hardware not responding? (motors / reward pumps)
+
+The display is driven by Python directly, so it works even with no Arduino — a
+working screen does **not** mean the serial link is up. On startup `run.py`
+auto-detects the Arduino (it filters to the USB device, so extra COM ports /
+Bluetooth don't confuse it) and then pings the board:
+
+- `[info] Arduino responded — hardware link OK.` → the link is good.
+- `[warn] opened COMx but the board never replied …` → the port opened but the
+  board isn't talking. Almost always one of:
+  1. **Firmware not flashed.** Upload `firmware/firmware.ino` to *this* board.
+     An old `cue.ino` does **not** understand `SERVO`/`REWARD` and won't respond.
+  2. **Port is held open** by the Arduino IDE Serial Monitor — close it.
+  3. **Wrong port** — run `python run.py --list-ports` and pass `--port COMx`.
+
+Quick bench check after flashing: open the Arduino Serial Monitor at 115200,
+type `PING` → it should reply `PONG`; type `REWARD L` → the left pump pulses;
+type `SERVO 60` / `SERVO 180` → the gate moves.

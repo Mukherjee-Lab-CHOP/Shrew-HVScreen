@@ -210,15 +210,24 @@ def main():
     # ---- Arduino hardware --------------------------------------------------
     port = args.port
     if port is None:
-        ports = Hardware.available_ports()
-        if len(ports) == 1:
-            port = ports[0]
-            print(f"[info] auto-detected serial port: {port}")
-        elif len(ports) > 1:
-            print(f"[info] multiple serial ports found ({', '.join(ports)}); "
-                  f"pass --port to choose one. Running terminal-only for now.")
+        port, candidates = Hardware.auto_detect_port()
+        if port:
+            print(f"[info] auto-detected Arduino port: {port}")
+        elif candidates:
+            print(f"[info] multiple candidate ports {candidates}; pass --port to "
+                  f"choose one. Running terminal-only for now.")
+        else:
+            print("[info] no serial port found; running terminal-only.")
     hw = Hardware(port=port, baud=args.baud)
-    hw.connect()                       # falls back to detached mode if no port
+    if hw.connect():                   # opened the port (else detached)
+        if hw.confirm(timeout=3.0):
+            print("[info] Arduino responded — hardware link OK.")
+        else:
+            print(f"[warn] opened {port} but the board never replied. The motors "
+                  f"and reward pumps will NOT work until this is fixed. Check that "
+                  f"firmware/firmware.ino is flashed to THIS board, that the port "
+                  f"is right (--list-ports), and that nothing else (Arduino Serial "
+                  f"Monitor!) is holding the port open.")
 
     # ---- Display -----------------------------------------------------------
     display = Display(fig1=args.fig1, fig2=args.fig2, fig3=args.fig3,
