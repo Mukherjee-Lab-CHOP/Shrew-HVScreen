@@ -16,10 +16,11 @@ import os
 import time
 from datetime import datetime
 
-from config import CH_LEFT, CH_RIGHT
+from config import CH_LEFT, CH_CENTER, CH_RIGHT
 
-STATE_WAIT_POKE = "WAIT_POKE"
-STATE_ITI       = "ITI"
+STATE_WAIT_CENTER = "WAIT_CENTER_HOLD"
+STATE_WAIT_POKE   = "WAIT_POKE"
+STATE_ITI         = "ITI"
 
 DEFAULT_MAX_CONSECUTIVE = 3
 DEFAULT_HOLD_MS = 2000
@@ -47,12 +48,12 @@ class ConsecutiveReward:
         self.consecutive = 0
 
         self._t0 = _now_ms()
-        self.state = STATE_WAIT_POKE
+        self.state = STATE_WAIT_CENTER
         self.state_start = self.clock()
 
-        self._broken = {CH_LEFT: False, CH_RIGHT: False}
-        self._broken_since = {CH_LEFT: 0, CH_RIGHT: 0}
-        self._armed = {CH_LEFT: True, CH_RIGHT: True}
+        self._broken = {CH_LEFT: False, CH_CENTER: False, CH_RIGHT: False}
+        self._broken_since = {CH_LEFT: 0, CH_CENTER: 0, CH_RIGHT: 0}
+        self._armed = {CH_LEFT: True, CH_CENTER: True, CH_RIGHT: True}
 
         self.csv_path = csv_path or datetime.now().strftime("session_%Y%m%d_%H%M%S.csv")
         parent = os.path.dirname(self.csv_path)
@@ -79,20 +80,26 @@ class ConsecutiveReward:
         if "q" in keys:
             return "QUIT"
         self._ingest_ir()
+        center = self._ir_hold(CH_CENTER) or ("c" in keys)
         left = self._ir_hold(CH_LEFT) or ("l" in keys)
         right = self._ir_hold(CH_RIGHT) or ("r" in keys)
         now = self.clock()
 
-        if self.state == STATE_WAIT_POKE:
+        if self.state == STATE_WAIT_CENTER:
+            if center:
+                self.state = STATE_WAIT_POKE
+                self.state_start = now
+                self._log("STATE = WAIT_POKE (poke LEFT or RIGHT)")
+        elif self.state == STATE_WAIT_POKE:
             if left:
                 self._poke("LEFT")
             elif right:
                 self._poke("RIGHT")
         elif self.state == STATE_ITI:
             if now - self.state_start >= self.ITI_MS:
-                self.state = STATE_WAIT_POKE
+                self.state = STATE_WAIT_CENTER
                 self.state_start = now
-                self._log("STATE = WAIT_POKE")
+                self._log("STATE = WAIT_CENTER_HOLD (hold CENTER, or press c)")
         return None
 
     # ---- IR hold timing ----------------------------------------------------
@@ -156,9 +163,10 @@ class ConsecutiveReward:
         print("#" * 64)
         print(f"  Max same-side streak before reward stops: {self.MAX_CONSECUTIVE}")
         print(f"  Logging to: {self.csv_path}")
-        print("  Controls: l = poke LEFT   r = poke RIGHT   q = quit")
+        print("  Controls: c = start trial (CENTER)   l = poke LEFT   "
+              "r = poke RIGHT   q = quit")
         print()
-        self._log("STATE = WAIT_POKE")
+        self._log("STATE = WAIT_CENTER_HOLD (hold CENTER, or press c)")
 
     def _log(self, msg):
         if self.verbose:
@@ -177,12 +185,14 @@ SPEC = {
          "default": DEFAULT_ITI_MS, "min": 0, "max": 60000, "step": 500},
     ],
     "states": [
-        {"id": STATE_WAIT_POKE, "label": "Wait Poke", "x": 80, "y": 80},
-        {"id": STATE_ITI,       "label": "Inter-Trial Interval", "x": 360, "y": 80},
+        {"id": STATE_WAIT_CENTER, "label": "Wait Center Hold", "x": 60,  "y": 60},
+        {"id": STATE_WAIT_POKE,   "label": "Wait Poke", "x": 340, "y": 60},
+        {"id": STATE_ITI,         "label": "Inter-Trial Interval", "x": 340, "y": 240},
     ],
     "transitions": [
-        {"from": STATE_WAIT_POKE, "to": STATE_ITI,       "label": "poke L/R"},
-        {"from": STATE_ITI,       "to": STATE_WAIT_POKE, "label": "ITI elapsed"},
+        {"from": STATE_WAIT_CENTER, "to": STATE_WAIT_POKE,   "label": "center held / 'c'"},
+        {"from": STATE_WAIT_POKE,   "to": STATE_ITI,         "label": "poke L/R"},
+        {"from": STATE_ITI,         "to": STATE_WAIT_CENTER, "label": "ITI elapsed"},
     ],
 }
 

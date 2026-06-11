@@ -147,10 +147,27 @@ class StateGraphView(QtWidgets.QGraphicsView):
         self.setRenderHint(QtGui.QPainter.Antialiasing)
         self.setBackgroundBrush(QtGui.QColor(38, 41, 48))
         self.setDragMode(QtWidgets.QGraphicsView.RubberBandDrag)
+        # zoom toward the cursor on wheel
+        self.setTransformationAnchor(QtWidgets.QGraphicsView.AnchorUnderMouse)
+        self._zoom = 1.0
         self._nodes = {}
         self._edges = []
 
+    def wheelEvent(self, event):
+        """Scroll wheel zooms the state machine (clamped)."""
+        delta = event.angleDelta().y()
+        if not delta:
+            return
+        factor = 1.0015 ** delta
+        new_zoom = self._zoom * factor
+        if new_zoom < 0.25 or new_zoom > 6.0:
+            return
+        self._zoom = new_zoom
+        self.scale(factor, factor)
+
     def load_spec(self, spec):
+        self.resetTransform()
+        self._zoom = 1.0
         self._scene.clear()
         self._nodes = {}
         self._edges = []

@@ -113,6 +113,7 @@ class PipelineWorker(QtCore.QThread):
                              trial_num=getattr(exp, "trial_num", 0))
         last_state = None
         last_done = -1
+        last_trial = -1
         try:
             while not self._stop.is_set():
                 keys = self._bus.drain_keys()
@@ -123,10 +124,11 @@ class PipelineWorker(QtCore.QThread):
                     self._bus.set_status(state=exp.state)
                     self._bus.push_event("state", exp.state)
                 done = completed(exp)
-                if done != last_done:
+                trial = int(getattr(exp, "trial_num", done))
+                if done != last_done or trial != last_trial:
                     last_done = done
-                    self._bus.set_status(trials_done=done,
-                                         trial_num=getattr(exp, "trial_num", done))
+                    last_trial = trial
+                    self._bus.set_status(trials_done=done, trial_num=trial)
 
                 # stage complete: requested number of trials finished
                 if target > 0 and done >= target:

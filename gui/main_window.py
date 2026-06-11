@@ -131,7 +131,7 @@ class MainWindow(QtWidgets.QMainWindow):
         for label, key in (("Center (c)", "c"), ("Left (l)", "l"),
                            ("Right (r)", "r"), ("Timeout (t)", "t")):
             b = QtWidgets.QPushButton(label)
-            b.clicked.connect(lambda _checked=False, k=key: self.bus.push_key(k))
+            b.clicked.connect(lambda _checked=False, k=key, lbl=label: self._manual_key(k, lbl))
             row.addWidget(b)
 
         row.addStretch(1)
@@ -274,6 +274,16 @@ class MainWindow(QtWidgets.QMainWindow):
         if text:
             self._send_raw(text)
             self.cmd_edit.clear()
+
+    def _manual_key(self, key, label):
+        """Feed a manual control key to the running experiment, echoing it so
+        it's visible that the press registered."""
+        self.bus.push_key(key)
+        running = self.worker is not None and self.worker.isRunning()
+        if running:
+            self.logs.add_print(f"[manual] {label}")
+        else:
+            self.logs.add_print(f"[manual] {label} — ignored (press Start first)")
 
     # ---- run control -------------------------------------------------------
     def _start_run(self):

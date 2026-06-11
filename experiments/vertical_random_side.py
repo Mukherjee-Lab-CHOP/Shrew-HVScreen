@@ -16,8 +16,9 @@ import random
 import time
 from datetime import datetime
 
-from config import ORIENT_HORIZONTAL, ORIENT_VERTICAL, CH_LEFT, CH_RIGHT
+from config import ORIENT_HORIZONTAL, ORIENT_VERTICAL, CH_LEFT, CH_CENTER, CH_RIGHT
 
+STATE_WAIT_CENTER = "WAIT_CENTER_HOLD"
 STATE_WAIT_CHOICE = "WAIT_CHOICE"
 STATE_ITI         = "ITI"
 
@@ -52,12 +53,12 @@ class VerticalRandomSide:
         self.stim_onset_ms = 0
 
         self._t0 = _now_ms()
-        self.state = STATE_WAIT_CHOICE
+        self.state = STATE_WAIT_CENTER
         self.state_start = self.clock()
 
-        self._broken = {CH_LEFT: False, CH_RIGHT: False}
-        self._broken_since = {CH_LEFT: 0, CH_RIGHT: 0}
-        self._armed = {CH_LEFT: True, CH_RIGHT: True}
+        self._broken = {CH_LEFT: False, CH_CENTER: False, CH_RIGHT: False}
+        self._broken_since = {CH_LEFT: 0, CH_CENTER: 0, CH_RIGHT: 0}
+        self._armed = {CH_LEFT: True, CH_CENTER: True, CH_RIGHT: True}
 
         self.csv_path = csv_path or datetime.now().strftime("session_%Y%m%d_%H%M%S.csv")
         parent = os.path.dirname(self.csv_path)
@@ -71,8 +72,9 @@ class VerticalRandomSide:
         ])
         self._csv_file.flush()
 
+        if self.display is not None:
+            self.display.black()
         self._intro()
-        self._start_trial()
 
     # ---- time --------------------------------------------------------------
     def clock(self):
@@ -83,12 +85,16 @@ class VerticalRandomSide:
         if "q" in keys:
             return "QUIT"
         self._ingest_ir()
+        center = self._ir_hold(CH_CENTER) or ("c" in keys)
         left = self._ir_hold(CH_LEFT) or ("l" in keys)
         right = self._ir_hold(CH_RIGHT) or ("r" in keys)
         force_to = "t" in keys
         now = self.clock()
 
-        if self.state == STATE_WAIT_CHOICE:
+        if self.state == STATE_WAIT_CENTER:
+            if center:
+                self._start_trial()
+        elif self.state == STATE_WAIT_CHOICE:
             if force_to or (now - self.state_start > self.CHOICE_TIMEOUT_MS):
                 self._timeout()
             elif left:
@@ -97,7 +103,9 @@ class VerticalRandomSide:
                 self._choice("RIGHT")
         elif self.state == STATE_ITI:
             if now - self.state_start >= self.ITI_MS:
-                self._start_trial()
+                self.state = STATE_WAIT_CENTER
+                self.state_start = now
+                self._log("STATE = WAIT_CENTER_HOLD (hold CENTER, or press c)")
         return None
 
     # ---- IR hold timing ----------------------------------------------------
@@ -184,8 +192,10 @@ class VerticalRandomSide:
               f"(other side 0%)")
         print(f"  Show other orientation: {self.SHOW_OTHER_ORIENTATION}")
         print(f"  Logging to: {self.csv_path}")
-        print("  Controls: l = choose LEFT   r = choose RIGHT   t = timeout   q = quit")
+        print("  Controls: c = start trial (CENTER)   l = choose LEFT   "
+              "r = choose RIGHT   t = timeout   q = quit")
         print()
+        self._log("STATE = WAIT_CENTER_HOLD (hold CENTER, or press c)")
 
     def _log(self, msg):
         if self.verbose:
@@ -208,12 +218,14 @@ SPEC = {
          "default": DEFAULT_ITI_MS, "min": 0, "max": 60000, "step": 500},
     ],
     "states": [
-        {"id": STATE_WAIT_CHOICE, "label": "Wait Choice", "x": 80, "y": 80},
-        {"id": STATE_ITI,         "label": "Inter-Trial Interval", "x": 360, "y": 80},
+        {"id": STATE_WAIT_CENTER, "label": "Wait Center Hold", "x": 60,  "y": 60},
+        {"id": STATE_WAIT_CHOICE, "label": "Wait Choice", "x": 340, "y": 60},
+        {"id": STATE_ITI,         "label": "Inter-Trial Interval", "x": 340, "y": 240},
     ],
     "transitions": [
+        {"from": STATE_WAIT_CENTER, "to": STATE_WAIT_CHOICE, "label": "center held / 'c'"},
         {"from": STATE_WAIT_CHOICE, "to": STATE_ITI,         "label": "choice or timeout"},
-        {"from": STATE_ITI,         "to": STATE_WAIT_CHOICE, "label": "ITI elapsed"},
+        {"from": STATE_ITI,         "to": STATE_WAIT_CENTER, "label": "ITI elapsed"},
     ],
 }
 
