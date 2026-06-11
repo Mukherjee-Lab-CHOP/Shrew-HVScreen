@@ -40,10 +40,18 @@ def _now_ms():
 
 
 class CueExperiment:
-    def __init__(self, hardware, display, csv_path=None, verbose=True):
+    def __init__(self, hardware, display, csv_path=None, params=None, verbose=True):
         self.hw = hardware
         self.display = display
         self.verbose = verbose
+
+        # ---- tunable parameters (GUI-editable; fall back to config defaults) -
+        params = params or {}
+        self.P_STIM_HORIZONTAL = float(params.get("P_STIM_HORIZONTAL", P_STIM_HORIZONTAL))
+        self.P_STIM_VERTICAL   = float(params.get("P_STIM_VERTICAL", P_STIM_VERTICAL))
+        self.HOLD_MS           = int(params.get("HOLD_MS", HOLD_MS))
+        self.CHOICE_TIMEOUT_MS = int(params.get("CHOICE_TIMEOUT_MS", CHOICE_TIMEOUT_MS))
+        self.ITI_MS            = int(params.get("ITI_MS", ITI_MS))
 
         # ---- reward / stimulus state (mirrors cue.ino globals) -------------
         self.trial_num = 0
@@ -126,7 +134,7 @@ class CueExperiment:
                 self._start_trial()
 
         elif self.state == STATE_WAIT_CHOICE:
-            if force_to or (now - self.state_start > CHOICE_TIMEOUT_MS):
+            if force_to or (now - self.state_start > self.CHOICE_TIMEOUT_MS):
                 self._handle_timeout()
             elif left_hold:
                 self._handle_choice("LEFT", self.left_fig)
@@ -134,7 +142,7 @@ class CueExperiment:
                 self._handle_choice("RIGHT", self.right_fig)
 
         elif self.state == STATE_ITI:
-            if now - self.state_start >= ITI_MS:
+            if now - self.state_start >= self.ITI_MS:
                 self._end_iti()
 
         return None
@@ -154,7 +162,7 @@ class CueExperiment:
     def _ir_hold(self, channel):
         """True once when a beam has been held broken continuously for HOLD_MS."""
         if (self._broken[channel] and self._armed[channel]
-                and (self.clock() - self._broken_since[channel]) >= HOLD_MS):
+                and (self.clock() - self._broken_since[channel]) >= self.HOLD_MS):
             self._armed[channel] = False
             return True
         return False
@@ -162,12 +170,12 @@ class CueExperiment:
     # ---- trial logic (ported from cue.ino) ---------------------------------
     def _randomize_rewards(self):
         if not self.horizontal_rewarded:
-            self.last_h_chance = 1 - (1 - P_STIM_HORIZONTAL) ** (self.horizontal_unchosen + 1)
+            self.last_h_chance = 1 - (1 - self.P_STIM_HORIZONTAL) ** (self.horizontal_unchosen + 1)
             self.horizontal_rewarded = random.random() < self.last_h_chance
         else:
             self.last_h_chance = 1.0
         if not self.vertical_rewarded:
-            self.last_v_chance = 1 - (1 - P_STIM_VERTICAL) ** (self.vertical_unchosen + 1)
+            self.last_v_chance = 1 - (1 - self.P_STIM_VERTICAL) ** (self.vertical_unchosen + 1)
             self.vertical_rewarded = random.random() < self.last_v_chance
         else:
             self.last_v_chance = 1.0
@@ -250,7 +258,7 @@ class CueExperiment:
         self.display.black()
         self.state = STATE_ITI
         self.state_start = self.clock()
-        self._log(f"STATE = ITI ({ITI_MS} ms)")
+        self._log(f"STATE = ITI ({self.ITI_MS} ms)")
 
         if choice == ORIENT_HORIZONTAL:
             self.horizontal_unchosen = 0
@@ -304,8 +312,8 @@ class CueExperiment:
         print("#" * 64)
         print("  CUE EXPERIMENT (Python controller)")
         print("#" * 64)
-        print(f"  P_STIM_HORIZONTAL base = {P_STIM_HORIZONTAL * 100:.1f}%")
-        print(f"  P_STIM_VERTICAL   base = {P_STIM_VERTICAL * 100:.1f}%")
+        print(f"  P_STIM_HORIZONTAL base = {self.P_STIM_HORIZONTAL * 100:.1f}%")
+        print(f"  P_STIM_VERTICAL   base = {self.P_STIM_VERTICAL * 100:.1f}%")
         print("  (effective chance = 1 - (1-P)^(unchosen+1))")
         print(f"  Logging trials to: {self.csv_path}")
         print()
@@ -337,6 +345,38 @@ class CueExperiment:
     def _log(self, msg):
         if self.verbose:
             print(f"{self.clock():>8}  {msg}", flush=True)
+
+
+# SPEC — machine-readable description of this experiment for the GUI:
+#   * variables: GUI-editable knobs (passed to CueExperiment(params=...))
+#   * states / transitions: the state machine, for the node-graph view.
+# self.state matches a state id, so the GUI can highlight the current node.
+SPEC = {
+    "name": "choose_orientation",
+    "title": "Choose Orientation (H/V cue task)",
+    "variables": [
+        {"key": "P_STIM_HORIZONTAL", "label": "P(horizontal reward)", "type": "float",
+         "default": P_STIM_HORIZONTAL, "min": 0.0, "max": 1.0, "step": 0.05},
+        {"key": "P_STIM_VERTICAL", "label": "P(vertical reward)", "type": "float",
+         "default": P_STIM_VERTICAL, "min": 0.0, "max": 1.0, "step": 0.05},
+        {"key": "HOLD_MS", "label": "Hold time (ms)", "type": "int",
+         "default": HOLD_MS, "min": 0, "max": 10000, "step": 100},
+        {"key": "CHOICE_TIMEOUT_MS", "label": "Choice timeout (ms)", "type": "int",
+         "default": CHOICE_TIMEOUT_MS, "min": 1000, "max": 120000, "step": 1000},
+        {"key": "ITI_MS", "label": "Inter-trial interval (ms)", "type": "int",
+         "default": ITI_MS, "min": 0, "max": 60000, "step": 500},
+    ],
+    "states": [
+        {"id": STATE_WAIT_CENTER, "label": "Wait Center Hold", "x": 60,  "y": 60},
+        {"id": STATE_WAIT_CHOICE, "label": "Wait Choice Hold", "x": 340, "y": 60},
+        {"id": STATE_ITI,         "label": "Inter-Trial Interval", "x": 340, "y": 260},
+    ],
+    "transitions": [
+        {"from": STATE_WAIT_CENTER, "to": STATE_WAIT_CHOICE, "label": "center held / 'c'"},
+        {"from": STATE_WAIT_CHOICE, "to": STATE_ITI,         "label": "choice or timeout"},
+        {"from": STATE_ITI,         "to": STATE_WAIT_CENTER, "label": "ITI elapsed"},
+    ],
+}
 
 
 # Exposed to run.py's experiment registry. To add a selectable experiment, drop

@@ -6,4 +6,5 @@
 # headless — but you want both for normal operation.
 
 pyserial>=3.5    # serial link to the Arduino (SerialLink / Hardware)
-pygame>=2.1      # fullscreen stimulus display (Display)
+pygame>=2.1      # fullscreen stimulus display (Display, used by run.py)
+PySide6>=6.5     # control-panel GUI (run_gui.py)

@@ -33,6 +33,7 @@ class SerialLink:
         self._listeners = []
         self._connected = False
         self._data_event = threading.Event()   # set when any line arrives
+        self.on_send = None                     # optional hook(line) for monitors/GUI
 
     # ---- configuration -----------------------------------------------------
     def set_serial_port(self, port):
@@ -53,6 +54,21 @@ class SerialLink:
         if list_ports is None:
             return []
         return [p.device for p in list_ports.comports()]
+
+    @staticmethod
+    def list_ports_detailed():
+        """List ports with metadata for a UI: list of dicts with
+        device, description, and is_usb (a USB VID present ~ likely Arduino)."""
+        if list_ports is None:
+            return []
+        out = []
+        for p in list_ports.comports():
+            out.append({
+                "device": p.device,
+                "description": (p.description or "").strip(),
+                "is_usb": getattr(p, "vid", None) is not None,
+            })
+        return out
 
     @staticmethod
     def auto_detect_port():
@@ -156,6 +172,11 @@ class SerialLink:
         # Every command is framed with a leading '$' (start marker) and a
         # trailing newline (terminator), so the firmware can reliably pick
         # commands out of the serial stream.
+        if self.on_send is not None:
+            try:
+                self.on_send(line)
+            except Exception:
+                pass
         if self._ser is None:
             self._log(f"(detached) -> ${line}")
             return

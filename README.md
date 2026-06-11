@@ -43,11 +43,37 @@ Arduino attached.
 pip install -r requirements.txt
 ```
 
-Both are optional: without `pyserial` the link runs detached; without `pygame`
-(or with `--no-display`) the task runs headless. Either way the terminal
-controls still work.
+`pyserial`/`pygame` are optional for the CLI (it degrades to detached/headless);
+`PySide6` is needed only for the GUI.
 
-## Run
+## GUI control panel
+
+```bash
+python run_gui.py
+```
+
+A PySide6 control panel that wires the whole system together:
+
+- **Top** — pick/scan the **COM port** (likely Arduinos are flagged), connect,
+  choose the **stimulus monitor**, and Start/Stop the run with manual
+  `c`/`l`/`r`/`t` controls.
+- **Left** — build a **pipeline** of stages: *run experiment X for N trials with
+  these variable overrides, then switch to the next stage.*
+- **Right** — pick an experiment, edit its **variables**, and see its
+  **state-machine node graph** (drag nodes; the live current state highlights
+  during a run). "Add as pipeline stage →" pushes the current setup left.
+- **Middle** — the **live CSV** being written and a **mirror** of the secondary
+  (stimulus) screen.
+- **Bottom** — two logs: **commands sent out** to the Arduino, and **prints /
+  events** (experiment logs + inbound firmware lines).
+
+The GUI renders the stimulus itself (Qt), so it doesn't need pygame. It can run
+detached (no Arduino) for dry runs — commands are logged but not sent. The
+state-machine playground *tunes* the existing coded experiments (in
+`experiments/`); each experiment exposes a `SPEC` describing its variables and
+state graph.
+
+## Run (command line)
 
 ```bash
 python run.py --list-experiments            # see available experiments
