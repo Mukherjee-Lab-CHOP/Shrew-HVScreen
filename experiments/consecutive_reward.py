@@ -1,22 +1,15 @@
 """consecutive_reward — nose-poke for reward, with a same-side streak limit.
 
-The shrew pokes LEFT or RIGHT and gets a reward on each poke, EXCEPT it may not
-go to the same side more than MAX_CONSECUTIVE times in a row: once it exceeds the
-limit on a side, that side stops paying out until it switches to the other side
-(which resets the streak).
+Each trial is initiated by a CENTER hold; the shrew then pokes LEFT or RIGHT and
+gets a reward, EXCEPT it may not go to the same side more than MAX_CONSECUTIVE
+times in a row: once it exceeds the limit on a side, that side stops paying out
+until it switches to the other side (which resets the streak).
 
-No center initiation and no stimulus — it just waits for a poke, delivers (or
-withholds) reward, runs a short ITI, and repeats.
-
-State machine:  WAIT_POKE --poke L/R--> ITI --elapsed--> WAIT_POKE
+State machine:  WAIT_CENTER_HOLD --center--> WAIT_POKE --poke L/R--> ITI
+                --elapsed--> WAIT_CENTER_HOLD
 """
 
-import csv
-import os
-import time
-from datetime import datetime
-
-from config import CH_LEFT, CH_CENTER, CH_RIGHT
+from experiments._base import Experiment, WAIT_CENTER_MSG
 
 STATE_WAIT_CENTER = "WAIT_CENTER_HOLD"
 STATE_WAIT_POKE   = "WAIT_POKE"
@@ -27,99 +20,44 @@ DEFAULT_HOLD_MS = 2000
 DEFAULT_ITI_MS  = 3000
 
 
-def _now_ms():
-    return int(time.monotonic() * 1000)
+class ConsecutiveReward(Experiment):
+    TITLE = "CONSECUTIVE REWARD (nose-poke)"
+    INITIAL_STATE = STATE_WAIT_CENTER
+    BLANK_ON_START = True
+    CONTROLS_HELP = ("c = start trial (CENTER)   l = poke LEFT   "
+                     "r = poke RIGHT   q = quit")
+    CSV_HEADER = [
+        "trial_number", "timestamp_ms", "chosen_side",
+        "consecutive_count", "max_consecutive", "reward",
+    ]
 
-
-class ConsecutiveReward:
-    def __init__(self, hardware, display, csv_path=None, params=None, verbose=True):
-        self.hw = hardware
-        self.display = display
-        self.verbose = verbose
-
-        params = params or {}
-        self.MAX_CONSECUTIVE = int(params.get("MAX_CONSECUTIVE", DEFAULT_MAX_CONSECUTIVE))
-        self.HOLD_MS = int(params.get("HOLD_MS", DEFAULT_HOLD_MS))
-        self.ITI_MS = int(params.get("ITI_MS", DEFAULT_ITI_MS))
-
-        self.trial_num = 0
-        self.completed_trials = 0   # trials finished (what the pipeline counts)
+    def setup(self):
+        self.MAX_CONSECUTIVE = self.param("MAX_CONSECUTIVE", DEFAULT_MAX_CONSECUTIVE, int)
+        self.HOLD_MS = self.param("HOLD_MS", DEFAULT_HOLD_MS, int)
+        self.ITI_MS = self.param("ITI_MS", DEFAULT_ITI_MS, int)
         self.last_side = None
         self.consecutive = 0
 
-        self._t0 = _now_ms()
-        self.state = STATE_WAIT_CENTER
-        self.state_start = self.clock()
-
-        self._broken = {CH_LEFT: False, CH_CENTER: False, CH_RIGHT: False}
-        self._broken_since = {CH_LEFT: 0, CH_CENTER: 0, CH_RIGHT: 0}
-        self._armed = {CH_LEFT: True, CH_CENTER: True, CH_RIGHT: True}
-
-        self.csv_path = csv_path or datetime.now().strftime("session_%Y%m%d_%H%M%S.csv")
-        parent = os.path.dirname(self.csv_path)
-        if parent:
-            os.makedirs(parent, exist_ok=True)
-        self._csv_file = open(self.csv_path, "w", newline="")
-        self._csv = csv.writer(self._csv_file)
-        self._csv.writerow([
-            "trial_number", "timestamp_ms", "chosen_side",
-            "consecutive_count", "max_consecutive", "reward",
-        ])
-        self._csv_file.flush()
-
-        if self.display is not None:
-            self.display.black()
-        self._intro()
-
-    # ---- time --------------------------------------------------------------
-    def clock(self):
-        return _now_ms() - self._t0
+    def intro_lines(self):
+        return [f"  Max same-side streak before reward stops: {self.MAX_CONSECUTIVE}"]
 
     # ---- main loop ---------------------------------------------------------
-    def step(self, keys):
-        if "q" in keys:
-            return "QUIT"
-        self._ingest_ir()
-        center = self._ir_hold(CH_CENTER) or ("c" in keys)
-        left = self._ir_hold(CH_LEFT) or ("l" in keys)
-        right = self._ir_hold(CH_RIGHT) or ("r" in keys)
+    def run_step(self, keys):
+        inp = self.inputs(keys)
         now = self.clock()
 
         if self.state == STATE_WAIT_CENTER:
-            if center:
-                self.state = STATE_WAIT_POKE
-                self.state_start = now
-                self._log("STATE = WAIT_POKE (poke LEFT or RIGHT)")
+            if inp["center"]:
+                self.goto(STATE_WAIT_POKE, "STATE = WAIT_POKE (poke LEFT or RIGHT)")
         elif self.state == STATE_WAIT_POKE:
-            if left:
+            if inp["left"]:
                 self._poke("LEFT")
-            elif right:
+            elif inp["right"]:
                 self._poke("RIGHT")
         elif self.state == STATE_ITI:
             if now - self.state_start >= self.ITI_MS:
-                self.state = STATE_WAIT_CENTER
-                self.state_start = now
-                self._log("STATE = WAIT_CENTER_HOLD (hold CENTER, or press c)")
+                self.goto(STATE_WAIT_CENTER, WAIT_CENTER_MSG)
         return None
-
-    # ---- IR hold timing ----------------------------------------------------
-    def _ingest_ir(self):
-        for channel, broken, _ms in self.hw.ir_detector.poll_events():
-            if channel not in self._broken:
-                continue
-            if broken and not self._broken[channel]:
-                self._broken[channel] = True
-                self._broken_since[channel] = self.clock()
-            elif not broken and self._broken[channel]:
-                self._broken[channel] = False
-                self._armed[channel] = True
-
-    def _ir_hold(self, channel):
-        if (self._broken[channel] and self._armed[channel]
-                and (self.clock() - self._broken_since[channel]) >= self.HOLD_MS):
-            self._armed[channel] = False
-            return True
-        return False
 
     # ---- poke handling -----------------------------------------------------
     def _poke(self, side):
@@ -134,43 +72,34 @@ class ConsecutiveReward:
         if allowed:
             self.hw.reward.deliver(side)
             reward_str = "REWARD"
-            self._log(f"POKE {side}  streak={self.consecutive}  -> REWARD")
+            self.log(f"POKE {side}  streak={self.consecutive}  -> REWARD")
         else:
             reward_str = "NO REWARD"
-            self._log(f"POKE {side}  streak={self.consecutive} > "
-                      f"{self.MAX_CONSECUTIVE}  -> NO REWARD (switch sides)")
+            self.log(f"POKE {side}  streak={self.consecutive} > "
+                     f"{self.MAX_CONSECUTIVE}  -> NO REWARD (switch sides)")
 
-        self._csv.writerow([self.trial_num, self.clock(), side,
-                            self.consecutive, self.MAX_CONSECUTIVE, reward_str])
-        self._csv_file.flush()
-
+        self.write_row([self.trial_num, self.clock(), side,
+                        self.consecutive, self.MAX_CONSECUTIVE, reward_str])
         self.completed_trials += 1
-        self.state = STATE_ITI
-        self.state_start = self.clock()
-        self._log(f"STATE = ITI ({self.ITI_MS} ms)")
+        self.goto(STATE_ITI, f"STATE = ITI ({self.ITI_MS} ms)")
 
-    # ---- io ----------------------------------------------------------------
-    def close(self):
-        try:
-            self._csv_file.close()
-        except Exception:
-            pass
-
-    def _intro(self):
-        print()
-        print("#" * 64)
-        print("  CONSECUTIVE REWARD (nose-poke)")
-        print("#" * 64)
-        print(f"  Max same-side streak before reward stops: {self.MAX_CONSECUTIVE}")
-        print(f"  Logging to: {self.csv_path}")
-        print("  Controls: c = start trial (CENTER)   l = poke LEFT   "
-              "r = poke RIGHT   q = quit")
-        print()
-        self._log("STATE = WAIT_CENTER_HOLD (hold CENTER, or press c)")
-
-    def _log(self, msg):
-        if self.verbose:
-            print(f"{self.clock():>8}  {msg}", flush=True)
+    # ---- run control -------------------------------------------------------
+    def skip_trial(self):
+        """Abort the current trial and move on. From WAIT_POKE it records a SKIP
+        row (no reward, streak untouched) and enters the ITI; from the ITI it
+        cuts it short; from WAIT_CENTER there's nothing to skip."""
+        if self.state == STATE_WAIT_POKE:
+            self.trial_num += 1
+            self.log("POKE skipped — moving to next trial.")
+            self.write_row([self.trial_num, self.clock(), "SKIP",
+                            self.consecutive, self.MAX_CONSECUTIVE, ""])
+            self.completed_trials += 1
+            self.goto(STATE_ITI, f"STATE = ITI ({self.ITI_MS} ms)")
+        elif self.state == STATE_ITI:
+            self.log("ITI skipped — ready for next trial.")
+            self.goto(STATE_WAIT_CENTER, WAIT_CENTER_MSG)
+        else:
+            self.log("Already waiting to start the next trial (nothing to skip).")
 
 
 SPEC = {

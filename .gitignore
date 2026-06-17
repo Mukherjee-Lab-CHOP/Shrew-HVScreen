@@ -2,3 +2,4 @@ __pycache__
 .venv
 venv
 data/
+.shrew_gui_state.json

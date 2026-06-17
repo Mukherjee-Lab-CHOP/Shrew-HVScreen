@@ -11,6 +11,7 @@ A ~30 ms QTimer drains the Bus (filled by the background worker) and updates the
 widgets, so the GUI thread never touches the worker's internals directly.
 """
 
+import json
 import os
 import sys
 
@@ -52,8 +53,14 @@ class MainWindow(QtWidgets.QMainWindow):
         self._last_stage = -1
         self._link_ready = False
         self._editing_index = -1
+        self._state_path = os.path.join(_ROOT, ".shrew_gui_state.json")
 
         self._build_ui()
+
+        # restore saved pipelines / settings, then start persisting changes
+        self._load_gui_state()
+        self.pipeline.pipeline_changed.connect(self._save_gui_state)
+        self.pipeline.add_requested.connect(self._new_stage)
 
         # drain the worker->GUI bus on the main thread
         self._timer = QtCore.QTimer(self)
@@ -154,6 +161,22 @@ class MainWindow(QtWidgets.QMainWindow):
             b.clicked.connect(lambda _checked=False, k=key, lbl=label: self._manual_key(k, lbl))
             row.addWidget(b)
 
+        row.addSpacing(20)
+        self.skip_btn = QtWidgets.QPushButton("Skip trial ⏭")
+        self.skip_btn.clicked.connect(self._skip_trial)
+        row.addWidget(self.skip_btn)
+        self.skip_stage_btn = QtWidgets.QPushButton("Skip experiment ⏭⏭")
+        self.skip_stage_btn.clicked.connect(self._skip_stage)
+        row.addWidget(self.skip_stage_btn)
+
+        row.addWidget(QtWidgets.QLabel("Trial #:"))
+        self.trial_num_spin = QtWidgets.QSpinBox()
+        self.trial_num_spin.setRange(0, 1000000)
+        row.addWidget(self.trial_num_spin)
+        set_trial_btn = QtWidgets.QPushButton("Set")
+        set_trial_btn.clicked.connect(self._set_trial_number)
+        row.addWidget(set_trial_btn)
+
         row.addStretch(1)
         self.run_status = QtWidgets.QLabel("idle")
         self.run_status.setStyleSheet("font-weight:bold;")
@@ -206,9 +229,13 @@ class MainWindow(QtWidgets.QMainWindow):
         trow = QtWidgets.QHBoxLayout()
         trow.addWidget(QtWidgets.QLabel("Trials"))
         self.trials_spin = QtWidgets.QSpinBox()
-        self.trials_spin.setRange(1, 100000)
+        self.trials_spin.setRange(1, 1000000)
         self.trials_spin.setValue(10)
         trow.addWidget(self.trials_spin)
+        self.infinite_chk = QtWidgets.QCheckBox("∞ (run until stopped/skipped)")
+        self.infinite_chk.toggled.connect(
+            lambda on: self.trials_spin.setEnabled(not on))
+        trow.addWidget(self.infinite_chk)
         trow.addStretch(1)
         layout.addLayout(trow)
 
@@ -254,10 +281,12 @@ class MainWindow(QtWidgets.QMainWindow):
         self.graph.load_spec(spec)
 
     def _current_stage(self):
-        """Build a stage dict from the right-panel editor's current state."""
+        """Build a stage dict from the right-panel editor's current state.
+        trials == 0 means 'run forever' (the ∞ checkbox)."""
+        trials = 0 if self.infinite_chk.isChecked() else self.trials_spin.value()
         return {
             "experiment": self.exp_combo.currentText(),
-            "trials": self.trials_spin.value(),
+            "trials": trials,
             "params": self.variables.values(),
         }
 
@@ -270,7 +299,10 @@ class MainWindow(QtWidgets.QMainWindow):
         else:
             self._editing_index = index
             self.exp_combo.setCurrentText(stage["experiment"])   # reloads variables/graph
-            self.trials_spin.setValue(int(stage.get("trials", 10)))
+            trials = int(stage.get("trials", 10) or 0)
+            self.infinite_chk.setChecked(trials == 0)
+            if trials > 0:
+                self.trials_spin.setValue(trials)
             self.variables.set_values(stage.get("params") or {})
         self._update_mode_label()
 
@@ -300,6 +332,31 @@ class MainWindow(QtWidgets.QMainWindow):
         self.pipeline.clear_selection()
         self._editing_index = -1
         self._update_mode_label()
+
+    # ---- persistence -------------------------------------------------------
+    def _load_gui_state(self):
+        """Restore saved pipelines / settings from disk (best effort)."""
+        try:
+            with open(self._state_path, "r", encoding="utf-8") as f:
+                data = json.load(f)
+        except (OSError, ValueError):
+            return
+        if data.get("pipelines"):
+            self.pipeline.load_dict({"pipelines": data["pipelines"],
+                                     "active": data.get("active")})
+        si = data.get("screen_index")
+        if isinstance(si, int):
+            self.serial_bar.screen_spin.setValue(si)
+
+    def _save_gui_state(self):
+        """Persist pipelines (incl. per-stage variables) + settings to disk."""
+        state = self.pipeline.to_dict()
+        state["screen_index"] = self.serial_bar.screen_index()
+        try:
+            with open(self._state_path, "w", encoding="utf-8") as f:
+                json.dump(state, f, indent=2)
+        except OSError:
+            pass
 
     # ---- hardware ----------------------------------------------------------
     def _connect_hardware(self, port, baud):
@@ -389,6 +446,34 @@ class MainWindow(QtWidgets.QMainWindow):
         else:
             self.logs.add_print(f"[manual] {label} — ignored (press Start first)")
 
+    def _running(self):
+        return self.worker is not None and self.worker.isRunning()
+
+    def _skip_trial(self):
+        """Abort the rest of the current trial and advance to the next one."""
+        if self._running():
+            self.bus.push_control({"type": "skip_trial"})
+            self.logs.add_print("[control] skip trial")
+        else:
+            self.logs.add_print("[control] skip trial — ignored (press Start first)")
+
+    def _skip_stage(self):
+        """Abort the rest of the current experiment/stage and advance to the next."""
+        if self._running():
+            self.bus.push_control({"type": "skip_stage"})
+            self.logs.add_print("[control] skip experiment")
+        else:
+            self.logs.add_print("[control] skip experiment — ignored (press Start first)")
+
+    def _set_trial_number(self):
+        """Set the live experiment's trial counter to the spin-box value."""
+        n = self.trial_num_spin.value()
+        if self._running():
+            self.bus.push_control({"type": "set_trial", "value": n})
+            self.logs.add_print(f"[control] set trial number to {n}")
+        else:
+            self.logs.add_print(f"[control] set trial #{n} — ignored (press Start first)")
+
     # ---- run control -------------------------------------------------------
     def _start_run(self):
         if self.worker is not None and self.worker.isRunning():
@@ -410,6 +495,7 @@ class MainWindow(QtWidgets.QMainWindow):
         self.start_btn.setEnabled(False)
         self.stop_btn.setEnabled(True)
         self.serial_bar.set_busy(True)
+        self.pipeline.set_busy(True)
         self.run_status.setText("running")
         self.worker.start()
 
@@ -422,6 +508,7 @@ class MainWindow(QtWidgets.QMainWindow):
         self.start_btn.setEnabled(True)
         self.stop_btn.setEnabled(False)
         self.serial_bar.set_busy(False)
+        self.pipeline.set_busy(False)
         self.run_status.setText("idle")
         self.pipeline.highlight_stage(-1)
         self.graph.set_current_state(None)
@@ -450,10 +537,13 @@ class MainWindow(QtWidgets.QMainWindow):
             stage = status["stage_label"]
             target = status["stage_target"]
             done = status["trials_done"]
-            left = max(0, target - done) if target else 0
+            if target:                       # finite target -> show progress + remaining
+                left = max(0, target - done)
+                progress = f"trial {done}/{target}  ({left} left)"
+            else:                            # 0 == run forever
+                progress = f"trial {done}/∞"
             self.run_status.setText(
-                f"running — stage '{stage}'  trial {done}/{target}  "
-                f"({left} left)  [{status['state'] or ''}]")
+                f"running — stage '{stage}'  {progress}  [{status['state'] or ''}]")
 
     def _apply_render(self, op):
         kind = op[0]
@@ -480,6 +570,7 @@ class MainWindow(QtWidgets.QMainWindow):
 
     # ---- shutdown ----------------------------------------------------------
     def closeEvent(self, event):
+        self._save_gui_state()
         if self.worker is not None:
             self.worker.request_stop()
             self.worker.wait(2000)

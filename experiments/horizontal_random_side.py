@@ -1,10 +1,11 @@
-"""vertical_random_side — present the VERTICAL target on a random side; the
+"""horizontal_random_side — present the HORIZONTAL target on a random side; the
 shrew should choose that side.
 
-Each trial is initiated by a CENTER hold, then the vertical figure appears on a
-random side (left or right). The other side shows the horizontal figure if
-SHOW_OTHER_ORIENTATION is on, otherwise it stays blank. Choosing the vertical
-side pays out with REWARD_PERCENT probability; the other side never pays (0%).
+Mirror of vertical_random_side. Each trial is initiated by a CENTER hold, then
+the horizontal figure appears on a random side (left or right). The other side
+shows the vertical figure if SHOW_OTHER_ORIENTATION is on, otherwise it stays
+blank. Choosing the horizontal side pays out with REWARD_PERCENT probability;
+the other side never pays (0%).
 
 State machine:  WAIT_CENTER_HOLD --center--> WAIT_CHOICE --choice/timeout--> ITI
                 --elapsed--> WAIT_CENTER_HOLD
@@ -27,14 +28,14 @@ DEFAULT_ITI_MS = 6000
 BLANK = 0   # display code for "nothing on this side"
 
 
-class VerticalRandomSide(Experiment):
-    TITLE = "VERTICAL ON RANDOM SIDE"
+class HorizontalRandomSide(Experiment):
+    TITLE = "HORIZONTAL ON RANDOM SIDE"
     INITIAL_STATE = STATE_WAIT_CENTER
     BLANK_ON_START = True
     CONTROLS_HELP = ("c = start trial (CENTER)   l = choose LEFT   "
                      "r = choose RIGHT   t = timeout   q = quit")
     CSV_HEADER = [
-        "trial_number", "target_onset_timestamp", "vertical_side",
+        "trial_number", "target_onset_timestamp", "horizontal_side",
         "chosen_side", "correct", "reward_percent", "reward",
     ]
 
@@ -45,12 +46,12 @@ class VerticalRandomSide(Experiment):
         self.CHOICE_TIMEOUT_MS = self.param("CHOICE_TIMEOUT_MS", DEFAULT_CHOICE_TIMEOUT_MS, int)
         self.ITI_MS = self.param("ITI_MS", DEFAULT_ITI_MS, int)
 
-        self.vertical_side = None   # "LEFT" / "RIGHT"
+        self.horizontal_side = None   # "LEFT" / "RIGHT"
         self.stim_onset_ms = 0
 
     def intro_lines(self):
         return [
-            f"  Vertical-side reward chance: {self.REWARD_PERCENT * 100:.1f}%  (other side 0%)",
+            f"  Horizontal-side reward chance: {self.REWARD_PERCENT * 100:.1f}%  (other side 0%)",
             f"  Show other orientation: {self.SHOW_OTHER_ORIENTATION}",
         ]
 
@@ -77,20 +78,20 @@ class VerticalRandomSide(Experiment):
     # ---- trial logic -------------------------------------------------------
     def _start_trial(self):
         self.trial_num += 1
-        self.vertical_side = random.choice(["LEFT", "RIGHT"])
-        other = ORIENT_HORIZONTAL if self.SHOW_OTHER_ORIENTATION else BLANK
-        if self.vertical_side == "LEFT":
-            left_code, right_code = ORIENT_VERTICAL, other
+        self.horizontal_side = random.choice(["LEFT", "RIGHT"])
+        other = ORIENT_VERTICAL if self.SHOW_OTHER_ORIENTATION else BLANK
+        if self.horizontal_side == "LEFT":
+            left_code, right_code = ORIENT_HORIZONTAL, other
         else:
-            left_code, right_code = other, ORIENT_VERTICAL
+            left_code, right_code = other, ORIENT_HORIZONTAL
         self.display_show(left_code, right_code)
         self.stim_onset_ms = self.clock()
         self.goto(STATE_WAIT_CHOICE,
-                  f"TRIAL {self.trial_num}: vertical on {self.vertical_side}"
+                  f"TRIAL {self.trial_num}: horizontal on {self.horizontal_side}"
                   f"  (show_other={self.SHOW_OTHER_ORIENTATION})")
 
     def _choice(self, side):
-        correct = (side == self.vertical_side)
+        correct = (side == self.horizontal_side)
         rewarded = correct and (random.random() < self.REWARD_PERCENT)
         if rewarded:
             self.hw.reward.deliver(side)
@@ -101,7 +102,7 @@ class VerticalRandomSide(Experiment):
         self._end_trial()
 
     def _timeout(self):
-        self.log(f"  TIMEOUT (vertical was {self.vertical_side})")
+        self.log(f"  TIMEOUT (horizontal was {self.horizontal_side})")
         self._write_row("TIMEOUT", False, "")
         self._end_trial()
 
@@ -112,7 +113,7 @@ class VerticalRandomSide(Experiment):
 
     def _write_row(self, chosen_side, correct, reward_str):
         self.write_row([
-            self.trial_num, self.stim_onset_ms, self.vertical_side,
+            self.trial_num, self.stim_onset_ms, self.horizontal_side,
             chosen_side, int(correct), round(self.REWARD_PERCENT, 4), reward_str,
         ])
 
@@ -133,10 +134,10 @@ class VerticalRandomSide(Experiment):
 
 
 SPEC = {
-    "name": "vertical_random_side",
-    "title": "Vertical on Random Side",
+    "name": "horizontal_random_side",
+    "title": "Horizontal on Random Side",
     "variables": [
-        {"key": "REWARD_PERCENT", "label": "Vertical-side reward chance", "type": "float",
+        {"key": "REWARD_PERCENT", "label": "Horizontal-side reward chance", "type": "float",
          "default": DEFAULT_REWARD_PERCENT, "min": 0.0, "max": 1.0, "step": 0.05},
         {"key": "SHOW_OTHER_ORIENTATION", "label": "Show other orientation", "type": "bool",
          "default": True},
@@ -159,4 +160,4 @@ SPEC = {
     ],
 }
 
-EXPERIMENT = VerticalRandomSide
+EXPERIMENT = HorizontalRandomSide

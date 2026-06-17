@@ -55,6 +55,7 @@ class PipelineWorker(QtCore.QThread):
         self._pipeline = pipeline
         self._bus = bus
         self._stop = threading.Event()
+        self._skip_stage = threading.Event()
 
     def request_stop(self):
         self._stop.set()
@@ -101,6 +102,7 @@ class PipelineWorker(QtCore.QThread):
         self._bus.push_event("stage", index)
         self._bus.push_print(f"\n=== STAGE {index+1}: {name}  (target {target} trials) ===")
 
+        self._skip_stage.clear()
         exp = self._build_experiment(info["class"], csv_path, params)
         if exp is None:
             return
@@ -116,6 +118,13 @@ class PipelineWorker(QtCore.QThread):
         last_trial = -1
         try:
             while not self._stop.is_set():
+                for ctrl in self._bus.drain_controls():
+                    self._apply_control(exp, ctrl)
+                if self._skip_stage.is_set():
+                    self._skip_stage.clear()
+                    self._bus.push_print(
+                        f"=== STAGE {index+1} skipped ({completed(exp)} trials) ===")
+                    break
                 keys = self._bus.drain_keys()
                 result = exp.step(keys)
 
@@ -144,6 +153,30 @@ class PipelineWorker(QtCore.QThread):
                 exp.close()
             except Exception:
                 pass
+
+    def _apply_control(self, exp, ctrl):
+        """Apply a structured run control to the live experiment."""
+        kind = ctrl.get("type")
+        if kind == "set_trial":
+            n = max(0, int(ctrl.get("value", 0)))
+            # all experiments share these counters; keep them consistent so the
+            # CSV numbering and the pipeline progress both reflect the new value.
+            if hasattr(exp, "trial_num"):
+                exp.trial_num = n
+            if hasattr(exp, "completed_trials"):
+                exp.completed_trials = n
+            self._bus.push_print(f"[control] trial number set to {n}")
+        elif kind == "skip_trial":
+            fn = getattr(exp, "skip_trial", None)
+            if callable(fn):
+                try:
+                    fn()
+                except Exception as e:
+                    self._bus.push_print(f"[control] skip failed: {e!r}")
+            else:
+                self._bus.push_print("[control] this experiment can't skip trials")
+        elif kind == "skip_stage":
+            self._skip_stage.set()
 
     def _build_experiment(self, cls, csv_path, params):
         try:

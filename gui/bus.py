@@ -17,6 +17,7 @@ class Bus:
         self.render = queue.Queue()     # display ops: ("show", l, r) / ("choice", side) / ("black",)
         self.events = queue.Queue()     # structured events: (kind, payload)
         self.keys = queue.Queue()       # manual control keys from the GUI -> worker
+        self.controls = queue.Queue()   # structured run controls: {"type": ...} dicts
 
         self._lock = threading.Lock()
         self._status = {
@@ -61,6 +62,19 @@ class Bus:
         while True:
             try:
                 out.append(self.keys.get_nowait())
+            except queue.Empty:
+                break
+        return out
+
+    # ---- run controls (GUI -> worker) --------------------------------------
+    def push_control(self, ctrl):
+        self.controls.put(ctrl)
+
+    def drain_controls(self):
+        out = []
+        while True:
+            try:
+                out.append(self.controls.get_nowait())
             except queue.Empty:
                 break
         return out
