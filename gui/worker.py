@@ -72,10 +72,7 @@ class PipelineWorker(QtCore.QThread):
 
         self._bus.set_status(running=True)
         try:
-            for index, stage in enumerate(self._pipeline):
-                if self._stop.is_set():
-                    break
-                self._run_stage(index, stage)
+            self._run_pipeline()
         except Exception as e:        # never let the worker die silently
             self._bus.push_print(f"[worker error] {e!r}")
         finally:
@@ -84,7 +81,39 @@ class PipelineWorker(QtCore.QThread):
             self._bus.set_status(running=False, state=None)
             self._bus.push_event("done")
 
-    def _run_stage(self, index, stage):
+    def _run_pipeline(self):
+        """Traverse the pipeline following each stage's `next` pointer (default:
+        the stage below it; "END": stop), running each stage `repeat` times before
+        advancing. Stable stage ids make `next` survive reordering."""
+        n = len(self._pipeline)
+        by_id = {s.get("id"): i for i, s in enumerate(self._pipeline) if s.get("id")}
+        index = 0
+        guard = 0
+        while 0 <= index < n and not self._stop.is_set():
+            stage = self._pipeline[index]
+            repeat = max(1, int(stage.get("repeat", 1) or 1))
+            for r in range(repeat):
+                if self._stop.is_set():
+                    break
+                tag = f"{index+1}/{repeat}-run-{r+1}" if repeat > 1 else None
+                self._run_stage(index, stage, run_tag=tag)
+            if self._stop.is_set():
+                break
+
+            nxt = stage.get("next")
+            if nxt == "END":
+                self._bus.push_print(f"=== pipeline stops after stage {index+1} ===")
+                break
+            if nxt and nxt in by_id:
+                index = by_id[nxt]
+            else:
+                index += 1          # default: fall through to the next stage
+            guard += 1
+            if guard > 100000:      # runaway-loop backstop
+                self._bus.push_print("[worker] pipeline step cap reached; stopping.")
+                break
+
+    def _run_stage(self, index, stage, run_tag=None):
         name = stage["experiment"]
         info = self._registry.get(name)
         if info is None:
@@ -95,12 +124,13 @@ class PipelineWorker(QtCore.QThread):
 
         data_dir = os.path.join(_ROOT, "data", name)
         os.makedirs(data_dir, exist_ok=True)
-        csv_path = os.path.join(
-            data_dir, datetime.now().strftime("session_%Y%m%d_%H%M%S.csv"))
+        csv_path = self._unique_csv(data_dir)
 
         self._bus.set_status(stage_index=index, stage_label=name, csv_path=csv_path)
         self._bus.push_event("stage", index)
-        self._bus.push_print(f"\n=== STAGE {index+1}: {name}  (target {target} trials) ===")
+        run_note = f"  [{run_tag}]" if run_tag else ""
+        self._bus.push_print(
+            f"\n=== STAGE {index+1}: {name}  (target {target} trials){run_note} ===")
 
         self._skip_stage.clear()
         exp = self._build_experiment(info["class"], csv_path, params)
@@ -177,6 +207,17 @@ class PipelineWorker(QtCore.QThread):
                 self._bus.push_print("[control] this experiment can't skip trials")
         elif kind == "skip_stage":
             self._skip_stage.set()
+
+    def _unique_csv(self, data_dir):
+        """A session CSV path that won't collide when a stage is run repeatedly
+        (the same-second timestamp would otherwise overwrite the previous run)."""
+        base = datetime.now().strftime("session_%Y%m%d_%H%M%S")
+        path = os.path.join(data_dir, base + ".csv")
+        n = 2
+        while os.path.exists(path):
+            path = os.path.join(data_dir, f"{base}_{n}.csv")
+            n += 1
+        return path
 
     def _build_experiment(self, cls, csv_path, params):
         try:

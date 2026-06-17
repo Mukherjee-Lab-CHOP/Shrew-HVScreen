@@ -12,10 +12,19 @@ variable editors); this panel handles ordering, removal, and pipeline switching.
 """
 
 import copy
+import uuid
 
 from PySide6 import QtCore, QtGui, QtWidgets
 
 from .variables_panel import VariablesPanel
+
+# `next` field sentinels: None == fall through to the stage below; END == stop.
+NEXT_DEFAULT = None
+NEXT_END = "END"
+
+
+def _new_id():
+    return uuid.uuid4().hex[:8]
 
 
 class _StageList(QtWidgets.QListWidget):
@@ -54,11 +63,11 @@ class StageDialog(QtWidgets.QDialog):
     """Pop-up for creating (or editing) a stage: experiment, trial count (with an
     ∞ option), and the experiment's variables."""
 
-    def __init__(self, registry, stage=None, parent=None):
+    def __init__(self, registry, stage=None, parent=None, siblings=None):
         super().__init__(parent)
         self.setWindowTitle("New stage" if stage is None else "Edit stage")
         self._registry = registry
-        self.resize(380, 460)
+        self.resize(380, 500)
 
         layout = QtWidgets.QVBoxLayout(self)
         form = QtWidgets.QFormLayout()
@@ -79,6 +88,21 @@ class StageDialog(QtWidgets.QDialog):
         trow.addWidget(self.infinite_chk)
         trow.addStretch(1)
         form.addRow("Trials", trials_box)
+
+        # how many times to run this stage before advancing to `next`
+        self.repeat_spin = QtWidgets.QSpinBox()
+        self.repeat_spin.setRange(1, 100000)
+        self.repeat_spin.setValue(1)
+        self.repeat_spin.setSuffix(" time(s)")
+        form.addRow("Run this stage", self.repeat_spin)
+
+        # which stage runs after this one (default = the stage below it)
+        self.next_combo = QtWidgets.QComboBox()
+        self.next_combo.addItem("Next in order (default)", NEXT_DEFAULT)
+        self.next_combo.addItem("Stop after this", NEXT_END)
+        for sid, label in (siblings or []):
+            self.next_combo.addItem(f"Go to: {label}", sid)
+        form.addRow("After this", self.next_combo)
         layout.addLayout(form)
 
         gb = QtWidgets.QGroupBox("Variables")
@@ -107,6 +131,9 @@ class StageDialog(QtWidgets.QDialog):
             if trials > 0:
                 self.trials_spin.setValue(trials)
             self.variables.set_values(stage.get("params") or {})
+            self.repeat_spin.setValue(int(stage.get("repeat", 1) or 1))
+            ni = self.next_combo.findData(stage.get("next", NEXT_DEFAULT))
+            self.next_combo.setCurrentIndex(ni if ni >= 0 else 0)
         else:
             self._reload_vars(self.exp_combo.currentText())
 
@@ -119,6 +146,8 @@ class StageDialog(QtWidgets.QDialog):
             "experiment": self.exp_combo.currentText(),
             "trials": trials,
             "params": self.variables.values(),
+            "repeat": self.repeat_spin.value(),
+            "next": self.next_combo.currentData(),
         }
 
 
@@ -216,23 +245,42 @@ class PipelinePanel(QtWidgets.QWidget):
             return dict(self._stages[index])
         return None
 
+    def _normalize(self, stage):
+        """Return a stage dict guaranteed to have a unique id, a `next` target,
+        and a `repeat` count (times to run the stage before advancing)."""
+        s = dict(stage)
+        if not s.get("id"):
+            s["id"] = _new_id()
+        s.setdefault("next", NEXT_DEFAULT)
+        s.setdefault("repeat", 1)
+        return s
+
     def add_stage_data(self, stage):
         """Append a stage from the right-side editor and select it."""
-        self._stages.append(dict(stage))
+        self._stages.append(self._normalize(stage))
         self._refresh()
         self.list.setCurrentRow(len(self._stages) - 1)
 
     def update_stage(self, index, stage):
-        """Replace an existing stage in place (kept selected)."""
+        """Replace an existing stage in place (kept selected). The stable id is
+        preserved; the `next` pointer is kept unless the new data sets one (the
+        right-side editor doesn't, the pop-up dialog does)."""
         if 0 <= index < len(self._stages):
-            self._stages[index] = dict(stage)
+            old = self._stages[index]
+            merged = dict(stage)
+            merged["id"] = old.get("id") or _new_id()
+            if "next" not in merged:
+                merged["next"] = old.get("next", NEXT_DEFAULT)
+            if "repeat" not in merged:
+                merged["repeat"] = old.get("repeat", 1)
+            self._stages[index] = merged
             self._refresh()
             self.list.setCurrentRow(index)
 
     def insert_stage(self, index, stage):
         """Insert a stage at `index` (clamped) and select it."""
         index = max(0, min(index, len(self._stages)))
-        self._stages.insert(index, dict(stage))
+        self._stages.insert(index, self._normalize(stage))
         self._refresh()
         self.list.setCurrentRow(index)
 
@@ -242,10 +290,12 @@ class PipelinePanel(QtWidgets.QWidget):
 
     # ---- duplicate / copy / paste ------------------------------------------
     def duplicate_stage(self):
-        """Insert a copy of the selected stage right below it."""
+        """Insert a copy of the selected stage right below it (with a fresh id)."""
         i = self.list.currentRow()
         if 0 <= i < len(self._stages):
-            self.insert_stage(i + 1, copy.deepcopy(self._stages[i]))
+            dup = copy.deepcopy(self._stages[i])
+            dup["id"] = _new_id()
+            self.insert_stage(i + 1, dup)
 
     def copy_stage(self):
         """Copy the selected stage to the clipboard (usable across pipelines)."""
@@ -260,13 +310,15 @@ class PipelinePanel(QtWidgets.QWidget):
             return
         i = self.list.currentRow()
         at = i + 1 if i >= 0 else len(self._stages)
-        self.insert_stage(at, copy.deepcopy(self._clipboard))
+        pasted = copy.deepcopy(self._clipboard)
+        pasted["id"] = _new_id()
+        self.insert_stage(at, pasted)
 
     # ---- create / edit via pop-up dialog -----------------------------------
     def new_stage_dialog(self):
         if not self._registry:
             return
-        dlg = StageDialog(self._registry, parent=self)
+        dlg = StageDialog(self._registry, parent=self, siblings=self._stage_labels())
         if dlg.exec() == QtWidgets.QDialog.Accepted:
             self.add_stage_data(dlg.stage())
 
@@ -275,9 +327,21 @@ class PipelinePanel(QtWidgets.QWidget):
         stage = self.get_stage(i)
         if stage is None:
             return
-        dlg = StageDialog(self._registry, stage=stage, parent=self)
+        dlg = StageDialog(self._registry, stage=stage, parent=self,
+                          siblings=self._stage_labels(exclude_index=i))
         if dlg.exec() == QtWidgets.QDialog.Accepted:
             self.update_stage(i, dlg.stage())
+
+    def _stage_labels(self, exclude_index=None):
+        """[(id, "N. experiment ×trials"), ...] for the 'After this' selector."""
+        self._ensure_ids()
+        out = []
+        for i, s in enumerate(self._stages):
+            if i == exclude_index:
+                continue
+            out.append((s["id"],
+                        f"{i+1}. {s['experiment']} ×{_fmt_trials(s.get('trials'))}"))
+        return out
 
     def remove_stage(self):
         i = self.list.currentRow()
@@ -388,6 +452,7 @@ class PipelinePanel(QtWidgets.QWidget):
                 {"Default": []}
             active = data.get("active")
             self._active = active if active in self._pipelines else next(iter(self._pipelines))
+            self._ensure_ids()
         finally:
             self._loading = False
         self._sync_combo()
@@ -413,21 +478,47 @@ class PipelinePanel(QtWidgets.QWidget):
 
     def _refresh(self):
         self.list.clear()
+        pos_by_id = {s.get("id"): i for i, s in enumerate(self._stages)}
         for i, s in enumerate(self._stages):
             extra = "" if not s.get("params") else "  " + ", ".join(
                 f"{k}={v}" for k, v in s["params"].items())
             prefix = "" if i == 0 else "↓ "
+            repeat = int(s.get("repeat", 1) or 1)
+            rep = f"  (run {repeat}×)" if repeat > 1 else ""
+            nxt = s.get("next", NEXT_DEFAULT)
+            if nxt == NEXT_END:
+                flow = "  ⏹ stop"
+            elif nxt and nxt in pos_by_id:
+                flow = f"  → {pos_by_id[nxt] + 1}"
+            else:
+                flow = ""
             item = QtWidgets.QListWidgetItem(
-                f"{prefix}{i+1}. {s['experiment']}  ×{_fmt_trials(s.get('trials'))}{extra}")
+                f"{prefix}{i+1}. {s['experiment']}  ×{_fmt_trials(s.get('trials'))}"
+                f"{rep}{extra}{flow}")
             item.setData(QtCore.Qt.UserRole, i)     # track index across drag-reorders
             self.list.addItem(item)
         if not self._loading:
             self.pipeline_changed.emit()
 
+    def _ensure_ids(self):
+        """Assign ids / default flow fields to any stages missing them (back-compat
+        for pipelines saved before stage ids existed)."""
+        seen = set()
+        for stages in self._pipelines.values():
+            for s in stages:
+                sid = s.get("id")
+                if not sid or sid in seen:
+                    sid = _new_id()
+                    s["id"] = sid
+                s.setdefault("next", NEXT_DEFAULT)
+                s.setdefault("repeat", 1)
+                seen.add(sid)
+
     def set_default_stage(self, experiment, params):
         """Seed a single 'Default' pipeline with one stage (first-run only)."""
         self._pipelines = {"Default": [
-            {"experiment": experiment, "trials": 10, "params": dict(params)}]}
+            {"experiment": experiment, "trials": 10, "params": dict(params),
+             "id": _new_id(), "next": NEXT_DEFAULT, "repeat": 1}]}
         self._active = "Default"
         self._sync_combo()
         self._refresh()
