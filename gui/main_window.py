@@ -50,9 +50,8 @@ class MainWindow(QtWidgets.QMainWindow):
         self.stim_window = None
         self.stim_scene = StimulusScene()
         self._last_csv = None
-        self._last_stage = -1
         self._link_ready = False
-        self._editing_index = -1
+        self._edit_kind = "create"          # "create" | "stage" | "loop"
         self._state_path = os.path.join(_ROOT, ".shrew_gui_state.json")
 
         self._build_ui()
@@ -105,7 +104,7 @@ class MainWindow(QtWidgets.QMainWindow):
 
         # left: pipeline
         self.pipeline = PipelinePanel(self.registry)
-        self.pipeline.stage_selected.connect(self._load_stage_for_edit)
+        self.pipeline.node_selected.connect(self._on_node_selected)
         hsplit.addWidget(self.pipeline)
 
         # middle: CSV + mirror
@@ -168,6 +167,9 @@ class MainWindow(QtWidgets.QMainWindow):
         self.skip_stage_btn = QtWidgets.QPushButton("Skip experiment ⏭⏭")
         self.skip_stage_btn.clicked.connect(self._skip_stage)
         row.addWidget(self.skip_stage_btn)
+        self.skip_loop_btn = QtWidgets.QPushButton("Skip loop ⤴")
+        self.skip_loop_btn.clicked.connect(self._skip_loop)
+        row.addWidget(self.skip_loop_btn)
 
         row.addWidget(QtWidgets.QLabel("Trial #:"))
         self.trial_num_spin = QtWidgets.QSpinBox()
@@ -220,11 +222,15 @@ class MainWindow(QtWidgets.QMainWindow):
         self.mode_label.setFont(f)
         layout.addWidget(self.mode_label)
 
-        layout.addWidget(QtWidgets.QLabel("Experiment"))
+        # --- stage editor (shown when a stage is selected / being created) ---
+        self.stage_editor = QtWidgets.QWidget()
+        selay = QtWidgets.QVBoxLayout(self.stage_editor)
+        selay.setContentsMargins(0, 0, 0, 0)
+        selay.addWidget(QtWidgets.QLabel("Experiment"))
         self.exp_combo = QtWidgets.QComboBox()
         self.exp_combo.addItems(sorted(self.registry))
         self.exp_combo.currentTextChanged.connect(self._on_experiment_selected)
-        layout.addWidget(self.exp_combo)
+        selay.addWidget(self.exp_combo)
 
         trow = QtWidgets.QHBoxLayout()
         trow.addWidget(QtWidgets.QLabel("Trials"))
@@ -237,26 +243,43 @@ class MainWindow(QtWidgets.QMainWindow):
             lambda on: self.trials_spin.setEnabled(not on))
         trow.addWidget(self.infinite_chk)
         trow.addStretch(1)
-        layout.addLayout(trow)
+        selay.addLayout(trow)
 
         vbox = QtWidgets.QGroupBox("Variables")
         vlay = QtWidgets.QVBoxLayout(vbox)
         self.variables = VariablesPanel()
-        # scroll so every variable is reachable no matter how many there are
         scroll = QtWidgets.QScrollArea()
         scroll.setWidgetResizable(True)
         scroll.setWidget(self.variables)
         vlay.addWidget(scroll)
+        selay.addWidget(vbox, 1)
+        layout.addWidget(self.stage_editor, 1)
 
+        # --- loop editor (shown when a loop is selected) ---
+        self.loop_editor = QtWidgets.QGroupBox("Loop")
+        llay = QtWidgets.QHBoxLayout(self.loop_editor)
+        llay.addWidget(QtWidgets.QLabel("Repeat"))
+        self.loop_count_spin = QtWidgets.QSpinBox()
+        self.loop_count_spin.setRange(1, 1000000)
+        self.loop_count_spin.setValue(1)
+        llay.addWidget(self.loop_count_spin)
+        self.loop_inf_chk = QtWidgets.QCheckBox("∞ (forever)")
+        self.loop_inf_chk.toggled.connect(
+            lambda on: self.loop_count_spin.setEnabled(not on))
+        llay.addWidget(self.loop_inf_chk)
+        llay.addStretch(1)
+        self.loop_editor.setVisible(False)
+        layout.addWidget(self.loop_editor)
+
+        # --- shared buttons ---
         btn_row = QtWidgets.QHBoxLayout()
         self.save_btn = QtWidgets.QPushButton()
-        self.save_btn.clicked.connect(self._save_stage)
+        self.save_btn.clicked.connect(self._save_editor)
         self.new_btn = QtWidgets.QPushButton("New stage")
         self.new_btn.clicked.connect(self._new_stage)
         btn_row.addWidget(self.save_btn)
         btn_row.addWidget(self.new_btn)
-        vlay.addLayout(btn_row)
-        layout.addWidget(vbox, 1)
+        layout.addLayout(btn_row)
         split.addWidget(top)
 
         bottom = QtWidgets.QWidget()
@@ -290,47 +313,62 @@ class MainWindow(QtWidgets.QMainWindow):
             "params": self.variables.values(),
         }
 
-    def _load_stage_for_edit(self, index):
-        """A pipeline stage was selected (index >= 0) -> load it into the editor
-        in 'editing' mode; index < 0 -> back to 'creating' mode."""
-        stage = self.pipeline.get_stage(index) if index >= 0 else None
-        if stage is None:
-            self._editing_index = -1
+    def _on_node_selected(self, node_id):
+        """A pipeline node was selected -> load it into the side inspector. A
+        stage shows the experiment editor; a loop shows the loop editor; nothing
+        selected returns to 'creating' mode."""
+        node = self.pipeline.selected_node() if node_id else None
+        if node is None:
+            self._edit_kind = "create"
+        elif node["type"] == "loop":
+            self._edit_kind = "loop"
+            count = int(node.get("count", 1) or 0)
+            self.loop_inf_chk.setChecked(count == 0)
+            if count > 0:
+                self.loop_count_spin.setValue(count)
         else:
-            self._editing_index = index
-            self.exp_combo.setCurrentText(stage["experiment"])   # reloads variables/graph
-            trials = int(stage.get("trials", 10) or 0)
+            self._edit_kind = "stage"
+            self.exp_combo.setCurrentText(node["experiment"])   # reloads variables/graph
+            trials = int(node.get("trials", 10) or 0)
             self.infinite_chk.setChecked(trials == 0)
             if trials > 0:
                 self.trials_spin.setValue(trials)
-            self.variables.set_values(stage.get("params") or {})
+            self.variables.set_values(node.get("params") or {})
         self._update_mode_label()
 
     def _update_mode_label(self):
-        if self._editing_index >= 0:
-            self.mode_label.setText(f"✎ Editing stage {self._editing_index + 1}")
+        is_loop = (self._edit_kind == "loop")
+        self.stage_editor.setVisible(not is_loop)
+        self.loop_editor.setVisible(is_loop)
+        if self._edit_kind == "stage":
+            self.mode_label.setText("✎ Editing stage")
             self.mode_label.setStyleSheet("color:#d35400;")
-            self.save_btn.setText("Save changes to stage")
+            self.save_btn.setText("Save changes")
             self.new_btn.setEnabled(True)
-        else:
+        elif self._edit_kind == "loop":
+            self.mode_label.setText("🔁 Editing loop")
+            self.mode_label.setStyleSheet("color:#2980b9;")
+            self.save_btn.setText("Save loop")
+            self.new_btn.setEnabled(True)
+        else:                                   # create
             self.mode_label.setText("＋ Creating new stage")
             self.mode_label.setStyleSheet("color:#2980b9;")
             self.save_btn.setText("Add as pipeline stage →")
             self.new_btn.setEnabled(False)
 
-    def _save_stage(self):
-        if not self.exp_combo.currentText():
-            return
-        stage = self._current_stage()
-        if self._editing_index >= 0:
-            self.pipeline.update_stage(self._editing_index, stage)
-        else:
-            self.pipeline.add_stage_data(stage)   # appends and selects -> edit mode
+    def _save_editor(self):
+        if self._edit_kind == "loop":
+            count = 0 if self.loop_inf_chk.isChecked() else self.loop_count_spin.value()
+            self.pipeline.update_selected_loop(count)
+        elif self._edit_kind == "stage":
+            self.pipeline.update_selected_stage(self._current_stage())
+        elif self.exp_combo.currentText():       # create
+            self.pipeline.add_stage_data(self._current_stage())
 
     def _new_stage(self):
-        """Deselect any stage and return the editor to 'creating' mode."""
+        """Deselect any node and return the editor to 'creating' mode."""
         self.pipeline.clear_selection()
-        self._editing_index = -1
+        self._edit_kind = "create"
         self._update_mode_label()
 
     # ---- persistence -------------------------------------------------------
@@ -465,6 +503,14 @@ class MainWindow(QtWidgets.QMainWindow):
         else:
             self.logs.add_print("[control] skip experiment — ignored (press Start first)")
 
+    def _skip_loop(self):
+        """Break out of the innermost running loop and continue after it."""
+        if self._running():
+            self.bus.push_control({"type": "skip_loop"})
+            self.logs.add_print("[control] skip loop")
+        else:
+            self.logs.add_print("[control] skip loop — ignored (press Start first)")
+
     def _set_trial_number(self):
         """Set the live experiment's trial counter to the spin-box value."""
         n = self.trial_num_spin.value()
@@ -478,7 +524,7 @@ class MainWindow(QtWidgets.QMainWindow):
     def _start_run(self):
         if self.worker is not None and self.worker.isRunning():
             return
-        pipeline = self.pipeline.get_pipeline()
+        pipeline = self.pipeline.get_nodes()
         if not pipeline:
             QtWidgets.QMessageBox.warning(self, "No pipeline", "Add at least one stage.")
             return
@@ -510,7 +556,7 @@ class MainWindow(QtWidgets.QMainWindow):
         self.serial_bar.set_busy(False)
         self.pipeline.set_busy(False)
         self.run_status.setText("idle")
-        self.pipeline.highlight_stage(-1)
+        self.pipeline.highlight_running(None)
         self.graph.set_current_state(None)
         if self.stim_window is not None:
             self.stim_window.close()
@@ -557,14 +603,9 @@ class MainWindow(QtWidgets.QMainWindow):
     def _handle_event(self, kind, payload):
         if kind == "state":
             self.graph.set_current_state(payload)
-        elif kind == "stage":
-            self._last_stage = payload
-            self.pipeline.highlight_stage(payload)
-            # show the running stage's experiment graph on the right
-            stage = self.pipeline.get_pipeline()[payload] if \
-                0 <= payload < len(self.pipeline.get_pipeline()) else None
-            if stage:
-                self.exp_combo.setCurrentText(stage["experiment"])
+        elif kind == "node":
+            # highlight the running stage node in the pipeline tree
+            self.pipeline.highlight_running(payload)
         elif kind == "done":
             pass
 

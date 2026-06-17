@@ -140,7 +140,7 @@ SPEC = {
          "default": DEFAULT_REWARD_PERCENT, "min": 0.0, "max": 1.0, "step": 0.05},
         {"key": "SHOW_OTHER_ORIENTATION", "label": "Show other orientation", "type": "bool",
          "default": True},
-        {"key": "HOLD_MS", "label": "Hold time (ms)", "type": "int",
+        {"key": "HOLD_MS", "label": "Initation Hold time (ms)", "type": "int",
          "default": DEFAULT_HOLD_MS, "min": 0, "max": 10000, "step": 100},
         {"key": "CHOICE_TIMEOUT_MS", "label": "Choice timeout (ms)", "type": "int",
          "default": DEFAULT_CHOICE_TIMEOUT_MS, "min": 1000, "max": 120000, "step": 1000},

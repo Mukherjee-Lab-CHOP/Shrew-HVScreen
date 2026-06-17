@@ -20,6 +20,10 @@ from PySide6 import QtCore
 _ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 
 
+class _SkipLoop(Exception):
+    """Raised to unwind out of the innermost running loop (Skip loop control)."""
+
+
 class _StreamToBus:
     """File-like object: forwards writes to the Bus prints queue (and the real
     stream, so a launching console still shows output)."""
@@ -56,6 +60,7 @@ class PipelineWorker(QtCore.QThread):
         self._bus = bus
         self._stop = threading.Event()
         self._skip_stage = threading.Event()
+        self._skip_loop = threading.Event()
 
     def request_stop(self):
         self._stop.set()
@@ -82,55 +87,59 @@ class PipelineWorker(QtCore.QThread):
             self._bus.push_event("done")
 
     def _run_pipeline(self):
-        """Traverse the pipeline following each stage's `next` pointer (default:
-        the stage below it; "END": stop), running each stage `repeat` times before
-        advancing. Stable stage ids make `next` survive reordering."""
-        n = len(self._pipeline)
-        by_id = {s.get("id"): i for i, s in enumerate(self._pipeline) if s.get("id")}
-        index = 0
-        guard = 0
-        while 0 <= index < n and not self._stop.is_set():
-            stage = self._pipeline[index]
-            repeat = max(1, int(stage.get("repeat", 1) or 1))
-            for r in range(repeat):
-                if self._stop.is_set():
-                    break
-                tag = f"{index+1}/{repeat}-run-{r+1}" if repeat > 1 else None
-                self._run_stage(index, stage, run_tag=tag)
+        """Walk the node tree top to bottom, repeating each loop's children."""
+        try:
+            self._run_nodes(self._pipeline)
+        except _SkipLoop:
+            pass        # "skip loop" pressed outside any loop -> nothing to unwind
+
+    def _run_nodes(self, nodes):
+        for node in nodes:
             if self._stop.is_set():
-                break
-
-            nxt = stage.get("next")
-            if nxt == "END":
-                self._bus.push_print(f"=== pipeline stops after stage {index+1} ===")
-                break
-            if nxt and nxt in by_id:
-                index = by_id[nxt]
+                return
+            if node.get("type") == "loop":
+                self._run_loop(node)
             else:
-                index += 1          # default: fall through to the next stage
-            guard += 1
-            if guard > 100000:      # runaway-loop backstop
-                self._bus.push_print("[worker] pipeline step cap reached; stopping.")
-                break
+                self._run_stage(node)
+                self._check_skip()      # may raise _SkipLoop to unwind a loop
 
-    def _run_stage(self, index, stage, run_tag=None):
-        name = stage["experiment"]
+    def _run_loop(self, node):
+        count = int(node.get("count", 1) or 0)      # 0 == infinite
+        label = f"×{count}" if count else "(∞)"
+        self._bus.push_print(f"\n=== LOOP start {label} ===")
+        iteration = 0
+        while not self._stop.is_set():
+            if count and iteration >= count:
+                break
+            try:
+                self._run_nodes(node.get("children", []))
+            except _SkipLoop:
+                self._bus.push_print("=== LOOP skipped ===")
+                break
+            iteration += 1
+        self._bus.push_print(f"=== LOOP done ({iteration} iteration(s)) ===")
+
+    def _check_skip(self):
+        if self._skip_loop.is_set():
+            self._skip_loop.clear()
+            raise _SkipLoop()
+
+    def _run_stage(self, node):
+        name = node["experiment"]
         info = self._registry.get(name)
         if info is None:
             self._bus.push_print(f"[worker] unknown experiment '{name}', skipping.")
             return
-        target = int(stage.get("trials", 1))
-        params = stage.get("params") or {}
+        target = int(node.get("trials", 1))
+        params = node.get("params") or {}
 
         data_dir = os.path.join(_ROOT, "data", name)
         os.makedirs(data_dir, exist_ok=True)
         csv_path = self._unique_csv(data_dir)
 
-        self._bus.set_status(stage_index=index, stage_label=name, csv_path=csv_path)
-        self._bus.push_event("stage", index)
-        run_note = f"  [{run_tag}]" if run_tag else ""
-        self._bus.push_print(
-            f"\n=== STAGE {index+1}: {name}  (target {target} trials){run_note} ===")
+        self._bus.set_status(stage_label=name, csv_path=csv_path)
+        self._bus.push_event("node", node.get("id"))
+        self._bus.push_print(f"\n=== STAGE {name}  (target {target} trials) ===")
 
         self._skip_stage.clear()
         exp = self._build_experiment(info["class"], csv_path, params)
@@ -150,10 +159,15 @@ class PipelineWorker(QtCore.QThread):
             while not self._stop.is_set():
                 for ctrl in self._bus.drain_controls():
                     self._apply_control(exp, ctrl)
+                # "skip loop" also stops the current stage (then _check_skip
+                # unwinds the enclosing loop); leave the flag set for it.
+                if self._skip_loop.is_set():
+                    self._bus.push_print(f"=== STAGE {name} cut by skip-loop ===")
+                    break
                 if self._skip_stage.is_set():
                     self._skip_stage.clear()
                     self._bus.push_print(
-                        f"=== STAGE {index+1} skipped ({completed(exp)} trials) ===")
+                        f"=== STAGE {name} skipped ({completed(exp)} trials) ===")
                     break
                 keys = self._bus.drain_keys()
                 result = exp.step(keys)
@@ -171,8 +185,7 @@ class PipelineWorker(QtCore.QThread):
 
                 # stage complete: requested number of trials finished
                 if target > 0 and done >= target:
-                    self._bus.push_print(
-                        f"=== STAGE {index+1} complete: {done} trials ===")
+                    self._bus.push_print(f"=== STAGE {name} complete: {done} trials ===")
                     break
                 if result == "QUIT":
                     self._stop.set()
@@ -207,6 +220,8 @@ class PipelineWorker(QtCore.QThread):
                 self._bus.push_print("[control] this experiment can't skip trials")
         elif kind == "skip_stage":
             self._skip_stage.set()
+        elif kind == "skip_loop":
+            self._skip_loop.set()
 
     def _unique_csv(self, data_dir):
         """A session CSV path that won't collide when a stage is run repeatedly

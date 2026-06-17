@@ -108,7 +108,7 @@ SPEC = {
     "variables": [
         {"key": "MAX_CONSECUTIVE", "label": "Max same-side in a row", "type": "int",
          "default": DEFAULT_MAX_CONSECUTIVE, "min": 1, "max": 100, "step": 1},
-        {"key": "HOLD_MS", "label": "Hold time (ms)", "type": "int",
+        {"key": "HOLD_MS", "label": "Initiation Hold time (ms)", "type": "int",
          "default": DEFAULT_HOLD_MS, "min": 0, "max": 10000, "step": 100},
         {"key": "ITI_MS", "label": "Inter-trial interval (ms)", "type": "int",
          "default": DEFAULT_ITI_MS, "min": 0, "max": 60000, "step": 500},

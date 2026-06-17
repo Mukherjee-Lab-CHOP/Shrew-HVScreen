@@ -269,7 +269,7 @@ SPEC = {
          "default": P_STIM_HORIZONTAL, "min": 0.0, "max": 1.0, "step": 0.05},
         {"key": "P_STIM_VERTICAL", "label": "P(vertical reward)", "type": "float",
          "default": P_STIM_VERTICAL, "min": 0.0, "max": 1.0, "step": 0.05},
-        {"key": "HOLD_MS", "label": "Hold time (ms)", "type": "int",
+        {"key": "HOLD_MS", "label": "Initiation Hold time (ms)", "type": "int",
          "default": HOLD_MS, "min": 0, "max": 10000, "step": 100},
         {"key": "CHOICE_TIMEOUT_MS", "label": "Choice timeout (ms)", "type": "int",
          "default": CHOICE_TIMEOUT_MS, "min": 1000, "max": 120000, "step": 1000},
