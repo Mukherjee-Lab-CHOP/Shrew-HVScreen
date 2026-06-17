@@ -119,18 +119,16 @@ class HorizontalRandomSide(Experiment):
 
     # ---- run control -------------------------------------------------------
     def skip_trial(self):
-        """Abort the current trial and move on. From WAIT_CHOICE it records a
-        SKIP row and enters the ITI; from the ITI it cuts it short and returns to
-        WAIT_CENTER; from WAIT_CENTER there's nothing to skip."""
-        if self.state == STATE_WAIT_CHOICE:
-            self.log(f"  TRIAL {self.trial_num} SKIPPED — moving to next trial.")
-            self._write_row("SKIP", False, "")
-            self._end_trial()
-        elif self.state == STATE_ITI:
-            self.log("  ITI skipped — ready for next trial.")
-            self.goto(STATE_WAIT_CENTER, WAIT_CENTER_MSG)
-        else:
-            self.log("Already waiting to start the next trial (nothing to skip).")
+        """Count a skipped trial and begin anew, from ANY state. Mid-trial it
+        skips the in-progress trial; at the start (or in the ITI) it still records
+        a fresh skipped trial. Either way it returns to WAIT_CENTER."""
+        if self.state != STATE_WAIT_CHOICE:
+            self.trial_num += 1     # no trial in progress -> count a fresh one
+        self.log(f"  TRIAL {self.trial_num} SKIPPED — beginning anew.")
+        self._write_row("SKIP", False, "")
+        self.completed_trials += 1
+        self.display_black()
+        self.goto(STATE_WAIT_CENTER, WAIT_CENTER_MSG)
 
 
 SPEC = {

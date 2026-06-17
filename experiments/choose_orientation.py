@@ -199,18 +199,19 @@ class CueExperiment(Experiment):
 
     # ---- run control -------------------------------------------------------
     def skip_trial(self):
-        """Abort the current trial and move on. From WAIT_CHOICE it records a
-        SKIP row and enters the ITI; from the ITI it cuts the ITI short and
-        returns to WAIT_CENTER; from WAIT_CENTER there's nothing to skip."""
-        if self.state == STATE_WAIT_CHOICE:
-            self.log(f"TRIAL {self.trial_num} SKIPPED — moving to next trial.")
-            self._write_trial_row("SKIP", ORIENT_NONE, "", "", "")
-            self._end_trial(ORIENT_NONE)
-        elif self.state == STATE_ITI:
-            self.log("ITI skipped — ready for next trial.")
-            self._end_iti()
-        else:
-            self.log("Already waiting to start the next trial (nothing to skip).")
+        """Count a skipped trial and begin anew, from ANY state. Mid-trial it
+        skips the in-progress trial; at the start (or in the ITI) it still
+        records a fresh skipped trial. Either way it returns to WAIT_CENTER."""
+        if self.state != STATE_WAIT_CHOICE:
+            # no trial in progress -> open a fresh (blank) trial to count it
+            self.trial_num += 1
+            self.trial_start_ms = self.clock()
+        self.log(f"TRIAL {self.trial_num} SKIPPED — beginning anew.")
+        self._write_trial_row("SKIP", ORIENT_NONE, "", "", "")
+        self.completed_trials += 1
+        self.hw.motor.close()
+        self.display_black()
+        self.goto(STATE_WAIT_CENTER, WAIT_CENTER_MSG)
 
     # ---- CSV ---------------------------------------------------------------
     def _write_trial_row(self, chosen_side, chosen_fig, choice_timestamp,

@@ -85,21 +85,14 @@ class ConsecutiveReward(Experiment):
 
     # ---- run control -------------------------------------------------------
     def skip_trial(self):
-        """Abort the current trial and move on. From WAIT_POKE it records a SKIP
-        row (no reward, streak untouched) and enters the ITI; from the ITI it
-        cuts it short; from WAIT_CENTER there's nothing to skip."""
-        if self.state == STATE_WAIT_POKE:
-            self.trial_num += 1
-            self.log("POKE skipped — moving to next trial.")
-            self.write_row([self.trial_num, self.clock(), "SKIP",
-                            self.consecutive, self.MAX_CONSECUTIVE, ""])
-            self.completed_trials += 1
-            self.goto(STATE_ITI, f"STATE = ITI ({self.ITI_MS} ms)")
-        elif self.state == STATE_ITI:
-            self.log("ITI skipped — ready for next trial.")
-            self.goto(STATE_WAIT_CENTER, WAIT_CENTER_MSG)
-        else:
-            self.log("Already waiting to start the next trial (nothing to skip).")
+        """Count a skipped trial and begin anew, from ANY state (no reward, streak
+        untouched). Returns to WAIT_CENTER ready for the next poke."""
+        self.trial_num += 1
+        self.log(f"TRIAL {self.trial_num} SKIPPED — beginning anew.")
+        self.write_row([self.trial_num, self.clock(), "SKIP",
+                        self.consecutive, self.MAX_CONSECUTIVE, ""])
+        self.completed_trials += 1
+        self.goto(STATE_WAIT_CENTER, WAIT_CENTER_MSG)
 
 
 SPEC = {
