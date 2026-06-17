@@ -24,8 +24,6 @@ STATE_WAIT_CENTER = "WAIT_CENTER_HOLD"
 STATE_WAIT_CHOICE = "WAIT_CHOICE_HOLD"
 STATE_ITI         = "ITI"
 
-DEFAULT_REWARD_STEP = 0.1
-
 
 class CueExperiment(Experiment):
     TITLE = "CUE EXPERIMENT (Python controller)"
@@ -53,9 +51,6 @@ class CueExperiment(Experiment):
         # ---- tunable parameters (GUI-editable; fall back to config defaults) -
         self.P_STIM_HORIZONTAL = self.param("P_STIM_HORIZONTAL", P_STIM_HORIZONTAL, float)
         self.P_STIM_VERTICAL   = self.param("P_STIM_VERTICAL", P_STIM_VERTICAL, float)
-        # How much an orientation's reward chance rises per trial it goes
-        # unchosen (added on top of its base P, clamped to 1.0). 0 = no change.
-        self.REWARD_STEP       = self.param("REWARD_STEP", DEFAULT_REWARD_STEP, float)
         self.HOLD_MS           = self.param("HOLD_MS", HOLD_MS, int)
         self.CHOICE_TIMEOUT_MS = self.param("CHOICE_TIMEOUT_MS", CHOICE_TIMEOUT_MS, int)
         self.ITI_MS            = self.param("ITI_MS", ITI_MS, int)
@@ -76,7 +71,7 @@ class CueExperiment(Experiment):
         return [
             f"  P_STIM_HORIZONTAL base = {self.P_STIM_HORIZONTAL * 100:.1f}%",
             f"  P_STIM_VERTICAL   base = {self.P_STIM_VERTICAL * 100:.1f}%",
-            "  (effective chance = base + REWARD_STEP per unchosen trial, clamped to 1)",
+            "  (effective chance = 1 - (1 - base)^(n+1) where n = unchosen trials)",
         ]
 
     # ---- main loop ---------------------------------------------------------
@@ -101,16 +96,14 @@ class CueExperiment(Experiment):
 
     # ---- trial logic (ported from cue.ino) ---------------------------------
     def _randomize_rewards(self):
-        # Effective chance = base P + REWARD_STEP per trial unchosen (clamped).
+        # Effective chance = 1 - (1 - base)^(n+1) where n = unchosen trials.
         if not self.horizontal_rewarded:
-            self.last_h_chance = min(1.0, self.P_STIM_HORIZONTAL
-                                     + self.REWARD_STEP * self.horizontal_unchosen)
+            self.last_h_chance = 1.0 - ((1.0 - self.P_STIM_HORIZONTAL) ** (self.horizontal_unchosen + 1))
             self.horizontal_rewarded = random.random() < self.last_h_chance
         else:
             self.last_h_chance = 1.0
         if not self.vertical_rewarded:
-            self.last_v_chance = min(1.0, self.P_STIM_VERTICAL
-                                     + self.REWARD_STEP * self.vertical_unchosen)
+            self.last_v_chance = 1.0 - ((1.0 - self.P_STIM_VERTICAL) ** (self.vertical_unchosen + 1))
             self.vertical_rewarded = random.random() < self.last_v_chance
         else:
             self.last_v_chance = 1.0
@@ -276,8 +269,6 @@ SPEC = {
          "default": P_STIM_HORIZONTAL, "min": 0.0, "max": 1.0, "step": 0.05},
         {"key": "P_STIM_VERTICAL", "label": "P(vertical reward)", "type": "float",
          "default": P_STIM_VERTICAL, "min": 0.0, "max": 1.0, "step": 0.05},
-        {"key": "REWARD_STEP", "label": "Reward change per unchosen", "type": "float",
-         "default": DEFAULT_REWARD_STEP, "min": 0.0, "max": 1.0, "step": 0.05},
         {"key": "HOLD_MS", "label": "Hold time (ms)", "type": "int",
          "default": HOLD_MS, "min": 0, "max": 10000, "step": 100},
         {"key": "CHOICE_TIMEOUT_MS", "label": "Choice timeout (ms)", "type": "int",
