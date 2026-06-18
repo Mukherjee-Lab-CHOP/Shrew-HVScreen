@@ -72,6 +72,7 @@ class Experiment:
         self.setup()
         if self.BLANK_ON_START:
             self.display_black()
+        self.close_gate()                   # safe state: gate closed at the start
         self.intro()
 
     # ---- params ------------------------------------------------------------
@@ -149,6 +150,21 @@ class Experiment:
     def display_black(self):
         if self.display is not None:
             self.display.black()
+
+    # ---- choice gate (servo) ----------------------------------------------
+    def open_gate(self):
+        """Open the choice gate (after the centre-initiation hold)."""
+        try:
+            self.hw.motor.open()
+        except Exception:
+            pass
+
+    def close_gate(self):
+        """Close the choice gate (during the ITI / between trials)."""
+        try:
+            self.hw.motor.close()
+        except Exception:
+            pass
 
     # ---- state transitions -------------------------------------------------
     def goto(self, state, msg=None):

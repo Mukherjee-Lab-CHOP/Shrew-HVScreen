@@ -48,6 +48,7 @@ class ConsecutiveReward(Experiment):
 
         if self.state == STATE_WAIT_CENTER:
             if inp["center"]:
+                self.open_gate()        # centre initiation -> open gate (SERVO 60)
                 self.goto(STATE_WAIT_POKE, "STATE = WAIT_POKE (poke LEFT or RIGHT)")
         elif self.state == STATE_WAIT_POKE:
             if inp["left"]:
@@ -81,6 +82,7 @@ class ConsecutiveReward(Experiment):
         self.write_row([self.trial_num, self.clock(), side,
                         self.consecutive, self.MAX_CONSECUTIVE, reward_str])
         self.completed_trials += 1
+        self.close_gate()               # ITI -> close gate (SERVO 180)
         self.goto(STATE_ITI, f"STATE = ITI ({self.ITI_MS} ms)")
 
     # ---- run control -------------------------------------------------------
@@ -92,6 +94,7 @@ class ConsecutiveReward(Experiment):
         self.write_row([self.trial_num, self.clock(), "SKIP",
                         self.consecutive, self.MAX_CONSECUTIVE, ""])
         self.completed_trials += 1
+        self.close_gate()
         self.goto(STATE_WAIT_CENTER, WAIT_CENTER_MSG)
 
 

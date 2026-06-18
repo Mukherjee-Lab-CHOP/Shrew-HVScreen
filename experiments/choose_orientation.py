@@ -140,8 +140,8 @@ class CueExperiment(Experiment):
 
         self._print_banner()
 
-        # Gate opens at stimulus onset and stays open through the ITI.
-        self.hw.motor.open()
+        # Centre initiation done -> open the gate (SERVO 60), like "Gate open".
+        self.open_gate()
         self.display_show(self.left_fig, self.right_fig)
         self.stim_onset_ms = self.clock()
         self.goto(STATE_WAIT_CHOICE,
@@ -180,9 +180,10 @@ class CueExperiment(Experiment):
 
     def _end_trial(self, choice):
         # Clear the screen (deferred behind any active choice overlay) and
-        # enter the ITI. Gate stays open until the ITI ends.
+        # enter the ITI with the gate closed (SERVO 180), like "Gate close".
         self.completed_trials += 1
         self.display_black()
+        self.close_gate()
         self.goto(STATE_ITI, f"STATE = ITI ({self.ITI_MS} ms)")
 
         if choice == ORIENT_HORIZONTAL:
@@ -194,7 +195,6 @@ class CueExperiment(Experiment):
         # timeout: counters unchanged (matches endTrial(ORIENT_NONE))
 
     def _end_iti(self):
-        self.hw.motor.close()
         self.goto(STATE_WAIT_CENTER, WAIT_CENTER_MSG)
 
     # ---- run control -------------------------------------------------------
@@ -209,8 +209,8 @@ class CueExperiment(Experiment):
         self.log(f"TRIAL {self.trial_num} SKIPPED — beginning anew.")
         self._write_trial_row("SKIP", ORIENT_NONE, "", "", "")
         self.completed_trials += 1
-        self.hw.motor.close()
         self.display_black()
+        self.close_gate()
         self.goto(STATE_WAIT_CENTER, WAIT_CENTER_MSG)
 
     # ---- CSV ---------------------------------------------------------------

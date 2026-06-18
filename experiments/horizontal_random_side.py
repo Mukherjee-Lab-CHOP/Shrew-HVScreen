@@ -84,6 +84,7 @@ class HorizontalRandomSide(Experiment):
             left_code, right_code = ORIENT_HORIZONTAL, other
         else:
             left_code, right_code = other, ORIENT_HORIZONTAL
+        self.open_gate()                # centre initiation -> open gate (SERVO 60)
         self.display_show(left_code, right_code)
         self.stim_onset_ms = self.clock()
         self.goto(STATE_WAIT_CHOICE,
@@ -109,6 +110,7 @@ class HorizontalRandomSide(Experiment):
     def _end_trial(self):
         self.completed_trials += 1
         self.display_black()
+        self.close_gate()               # ITI -> close gate (SERVO 180)
         self.goto(STATE_ITI, f"  STATE = ITI ({self.ITI_MS} ms)")
 
     def _write_row(self, chosen_side, correct, reward_str):
@@ -128,6 +130,7 @@ class HorizontalRandomSide(Experiment):
         self._write_row("SKIP", False, "")
         self.completed_trials += 1
         self.display_black()
+        self.close_gate()
         self.goto(STATE_WAIT_CENTER, WAIT_CENTER_MSG)
 
 
