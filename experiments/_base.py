@@ -47,6 +47,13 @@ class Experiment:
                      "t = timeout   q = quit")
     BLANK_ON_START = False
     HOLD_MS = 2000          # overridden in setup() from params
+    # Reward phase: after a rewarded response the gate stays OPEN for REWARD_MS so
+    # the animal can collect, THEN the ITI begins (which closes the gate). The
+    # base manages this timed state; experiments call enter_reward_phase().
+    REWARD_STATE = "REWARD"
+    ITI_STATE = "ITI"
+    REWARD_MS = 0           # overridden in setup() from params (0 = no wait)
+    ITI_MS = 0              # overridden in setup() from params
 
     def __init__(self, hardware, display, csv_path=None, params=None, verbose=True):
         self.hw = hardware
@@ -173,12 +180,27 @@ class Experiment:
         if msg:
             self.log(msg)
 
+    def enter_reward_phase(self):
+        """After a rewarded response: hold here (gate stays OPEN, stimulus stays
+        up) for REWARD_MS so the animal can collect, then the base advances into
+        the ITI — which closes the gate. Experiments call this instead of going
+        straight to the ITI when a trial is rewarded."""
+        self.goto(self.REWARD_STATE, f"STATE = REWARD ({self.REWARD_MS} ms)")
+
     # ---- main loop ---------------------------------------------------------
     def step(self, keys):
         """Advance the state machine one tick. Returns "QUIT" or None."""
         if "q" in keys:
             return "QUIT"
         self.ingest_ir()
+        if self.state == self.REWARD_STATE:
+            # reward-collection window: gate stays open until REWARD_MS elapses,
+            # then close the gate and begin the ITI.
+            if self.clock() - self.state_start >= self.REWARD_MS:
+                self.display_black()
+                self.close_gate()
+                self.goto(self.ITI_STATE, f"STATE = ITI ({self.ITI_MS} ms)")
+            return None
         return self.run_step(keys)
 
     # ---- subclass hooks ----------------------------------------------------

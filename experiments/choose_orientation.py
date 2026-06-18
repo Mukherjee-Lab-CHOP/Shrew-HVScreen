@@ -22,7 +22,10 @@ from experiments._base import Experiment, WAIT_CENTER_MSG
 
 STATE_WAIT_CENTER = "WAIT_CENTER_HOLD"
 STATE_WAIT_CHOICE = "WAIT_CHOICE_HOLD"
+STATE_REWARD      = "REWARD"
 STATE_ITI         = "ITI"
+
+DEFAULT_REWARD_MS = 3000
 
 
 class CueExperiment(Experiment):
@@ -53,6 +56,7 @@ class CueExperiment(Experiment):
         self.P_STIM_VERTICAL   = self.param("P_STIM_VERTICAL", P_STIM_VERTICAL, float)
         self.HOLD_MS           = self.param("HOLD_MS", HOLD_MS, int)
         self.CHOICE_TIMEOUT_MS = self.param("CHOICE_TIMEOUT_MS", CHOICE_TIMEOUT_MS, int)
+        self.REWARD_MS         = self.param("REWARD_MS", DEFAULT_REWARD_MS, int)
         self.ITI_MS            = self.param("ITI_MS", ITI_MS, int)
 
         # ---- reward / stimulus state (mirrors cue.ino globals) -------------
@@ -169,22 +173,17 @@ class CueExperiment(Experiment):
         self.display_choice(side)
         self._write_trial_row(side, chosen_fig, choice_timestamp, reaction_time_ms,
                               "REWARD" if rewarded else "NO REWARD")
-        self._end_trial(chosen_fig)
+        self._end_trial(chosen_fig, rewarded)
 
     def _handle_timeout(self):
         self.log(f"TRIAL {self.trial_num} TIMEOUT — no choice made.")
         # Probabilities/sides/onset are still known for a timed-out trial; only
         # the choice-specific fields are blank.
         self._write_trial_row("TIMEOUT", ORIENT_NONE, "", "", "")
-        self._end_trial(ORIENT_NONE)
+        self._end_trial(ORIENT_NONE, rewarded=False)
 
-    def _end_trial(self, choice):
-        # Clear the screen (deferred behind any active choice overlay) and
-        # enter the ITI with the gate closed (SERVO 180), like "Gate close".
+    def _end_trial(self, choice, rewarded=False):
         self.completed_trials += 1
-        self.display_black()
-        self.close_gate()
-        self.goto(STATE_ITI, f"STATE = ITI ({self.ITI_MS} ms)")
 
         if choice == ORIENT_HORIZONTAL:
             self.horizontal_unchosen = 0
@@ -193,6 +192,15 @@ class CueExperiment(Experiment):
             self.vertical_unchosen = 0
             self.horizontal_unchosen += 1
         # timeout: counters unchanged (matches endTrial(ORIENT_NONE))
+
+        if rewarded:
+            # keep the gate open + stimulus up for the reward phase, then ITI
+            self.enter_reward_phase()
+        else:
+            # Clear the screen and enter the ITI with the gate closed (SERVO 180).
+            self.display_black()
+            self.close_gate()
+            self.goto(STATE_ITI, f"STATE = ITI ({self.ITI_MS} ms)")
 
     def _end_iti(self):
         self.goto(STATE_WAIT_CENTER, WAIT_CENTER_MSG)
@@ -274,17 +282,22 @@ SPEC = {
          "default": HOLD_MS, "min": 0, "max": 10000, "step": 100},
         {"key": "CHOICE_TIMEOUT_MS", "label": "Choice timeout (ms)", "type": "int",
          "default": CHOICE_TIMEOUT_MS, "min": 1000, "max": 120000, "step": 1000},
+        {"key": "REWARD_MS", "label": "Reward phase (ms, gate open)", "type": "int",
+         "default": DEFAULT_REWARD_MS, "min": 0, "max": 60000, "step": 250},
         {"key": "ITI_MS", "label": "Inter-trial interval (ms)", "type": "int",
          "default": ITI_MS, "min": 0, "max": 60000, "step": 500},
     ],
     "states": [
         {"id": STATE_WAIT_CENTER, "label": "Wait Center Hold", "x": 60,  "y": 60},
         {"id": STATE_WAIT_CHOICE, "label": "Wait Choice Hold", "x": 340, "y": 60},
+        {"id": STATE_REWARD,      "label": "Reward (gate open)", "x": 600, "y": 60},
         {"id": STATE_ITI,         "label": "Inter-Trial Interval", "x": 340, "y": 260},
     ],
     "transitions": [
         {"from": STATE_WAIT_CENTER, "to": STATE_WAIT_CHOICE, "label": "center held / 'c'"},
-        {"from": STATE_WAIT_CHOICE, "to": STATE_ITI,         "label": "choice or timeout"},
+        {"from": STATE_WAIT_CHOICE, "to": STATE_REWARD,      "label": "rewarded choice"},
+        {"from": STATE_WAIT_CHOICE, "to": STATE_ITI,         "label": "no reward / timeout"},
+        {"from": STATE_REWARD,      "to": STATE_ITI,         "label": "reward phase done"},
         {"from": STATE_ITI,         "to": STATE_WAIT_CENTER, "label": "ITI elapsed"},
     ],
 }

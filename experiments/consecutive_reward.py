@@ -13,11 +13,13 @@ from experiments._base import Experiment, WAIT_CENTER_MSG
 
 STATE_WAIT_CENTER = "WAIT_CENTER_HOLD"
 STATE_WAIT_POKE   = "WAIT_POKE"
+STATE_REWARD      = "REWARD"
 STATE_ITI         = "ITI"
 
 DEFAULT_MAX_CONSECUTIVE = 3
-DEFAULT_HOLD_MS = 2000
-DEFAULT_ITI_MS  = 3000
+DEFAULT_INIT_HOLD_MS = 2000
+DEFAULT_REWARD_MS = 3000
+DEFAULT_ITI_MS  = 6000
 
 
 class ConsecutiveReward(Experiment):
@@ -33,7 +35,8 @@ class ConsecutiveReward(Experiment):
 
     def setup(self):
         self.MAX_CONSECUTIVE = self.param("MAX_CONSECUTIVE", DEFAULT_MAX_CONSECUTIVE, int)
-        self.HOLD_MS = self.param("HOLD_MS", DEFAULT_HOLD_MS, int)
+        self.INIT_HOLD_MS = self.param("INIT_HOLD_MS", DEFAULT_INIT_HOLD_MS, int)
+        self.REWARD_MS = self.param("REWARD_MS", DEFAULT_REWARD_MS, int)
         self.ITI_MS = self.param("ITI_MS", DEFAULT_ITI_MS, int)
         self.last_side = None
         self.consecutive = 0
@@ -82,8 +85,12 @@ class ConsecutiveReward(Experiment):
         self.write_row([self.trial_num, self.clock(), side,
                         self.consecutive, self.MAX_CONSECUTIVE, reward_str])
         self.completed_trials += 1
-        self.close_gate()               # ITI -> close gate (SERVO 180)
-        self.goto(STATE_ITI, f"STATE = ITI ({self.ITI_MS} ms)")
+        if allowed:
+            # rewarded poke: keep the gate open for the reward phase, then ITI
+            self.enter_reward_phase()
+        else:
+            self.close_gate()           # ITI -> close gate (SERVO 180)
+            self.goto(STATE_ITI, f"STATE = ITI ({self.ITI_MS} ms)")
 
     # ---- run control -------------------------------------------------------
     def skip_trial(self):
@@ -104,19 +111,24 @@ SPEC = {
     "variables": [
         {"key": "MAX_CONSECUTIVE", "label": "Max same-side in a row", "type": "int",
          "default": DEFAULT_MAX_CONSECUTIVE, "min": 1, "max": 100, "step": 1},
-        {"key": "HOLD_MS", "label": "Initiation Hold time (ms)", "type": "int",
-         "default": DEFAULT_HOLD_MS, "min": 0, "max": 10000, "step": 100},
+        {"key": "INIT_HOLD_MS", "label": "Initiation Hold time (ms)", "type": "int",
+         "default": DEFAULT_INIT_HOLD_MS, "min": 0, "max": 10000, "step": 100},
+        {"key": "REWARD_MS", "label": "Reward phase (ms, gate open)", "type": "int",
+         "default": DEFAULT_REWARD_MS, "min": 0, "max": 60000, "step": 250},
         {"key": "ITI_MS", "label": "Inter-trial interval (ms)", "type": "int",
          "default": DEFAULT_ITI_MS, "min": 0, "max": 60000, "step": 500},
     ],
     "states": [
         {"id": STATE_WAIT_CENTER, "label": "Wait Center Hold", "x": 60,  "y": 60},
         {"id": STATE_WAIT_POKE,   "label": "Wait Poke", "x": 340, "y": 60},
+        {"id": STATE_REWARD,      "label": "Reward (gate open)", "x": 600, "y": 60},
         {"id": STATE_ITI,         "label": "Inter-Trial Interval", "x": 340, "y": 240},
     ],
     "transitions": [
         {"from": STATE_WAIT_CENTER, "to": STATE_WAIT_POKE,   "label": "center held / 'c'"},
-        {"from": STATE_WAIT_POKE,   "to": STATE_ITI,         "label": "poke L/R"},
+        {"from": STATE_WAIT_POKE,   "to": STATE_REWARD,      "label": "rewarded poke"},
+        {"from": STATE_WAIT_POKE,   "to": STATE_ITI,         "label": "no-reward poke"},
+        {"from": STATE_REWARD,      "to": STATE_ITI,         "label": "reward phase done"},
         {"from": STATE_ITI,         "to": STATE_WAIT_CENTER, "label": "ITI elapsed"},
     ],
 }

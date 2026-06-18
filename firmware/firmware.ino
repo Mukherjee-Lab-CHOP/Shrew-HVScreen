@@ -9,12 +9,12 @@
   CSV logging — lives in the Python controller, which talks to this board
   through the Motor / Reward / IR / Tone classes (over one SerialLink).
 
-  Wiring (unchanged from the original cue.ino):
-    INNER RIGHT:  LED emitter pin 6   | Receiver pin 19
+  Wiring (LEFT/RIGHT swapped vs the original cue.ino — see the pin defines):
+    INNER RIGHT:  LED emitter pin 10  | Receiver pin 2     (physical LEFT port)
     CENTER:       LED emitter pin 8   | Receiver pin 18
-    INNER LEFT:   LED emitter pin 10  | Receiver pin 2
-    LEFT  reward pump  pin 40
-    RIGHT reward pump  pin 44
+    INNER LEFT:   LED emitter pin 6   | Receiver pin 19    (physical RIGHT port)
+    LEFT  reward pump  pin 44   (physical RIGHT pump)
+    RIGHT reward pump  pin 40   (physical LEFT pump)
     Gate servo         pin 48   (60 deg = OPEN, 180 deg = CLOSE)
     Buzzer/tone        pin 9    (NOT WIRED YET — TONE command is stubbed)
 
@@ -45,19 +45,24 @@
 
 #include <Servo.h>
 
+// LEFT and RIGHT are swapped here in firmware (the inner-left/right IR pairs and
+// the reward pumps trade pins) so the rig's physical sides match the screen,
+// which is driven by Python and is left untouched. CENTER and the gate are
+// unchanged. Original (pre-swap) pins are noted in comments.
+
 // IR LED emitter pins (OUTPUT)
-#define LED_IR   6
+#define LED_IR   10   // was 6   (L/R swapped)
 #define LED_C    8
-#define LED_IL   10
+#define LED_IL   6    // was 10  (L/R swapped)
 
 // Receiver pins (INPUT_PULLUP)
-#define RX_IR    19
+#define RX_IR    2    // was 19  (L/R swapped)
 #define RX_C     18
-#define RX_IL    2
+#define RX_IL    19   // was 2   (L/R swapped)
 
 // Reward pump pins (OUTPUT)
-#define REWARD_L 40
-#define REWARD_R 44
+#define REWARD_L 44   // was 40  (L/R swapped)
+#define REWARD_R 40   // was 44  (L/R swapped)
 
 // Gate servo
 #define SERVO_PIN 48

@@ -18,11 +18,13 @@ from experiments._base import Experiment, WAIT_CENTER_MSG
 
 STATE_WAIT_CENTER = "WAIT_CENTER_HOLD"
 STATE_WAIT_CHOICE = "WAIT_CHOICE"
+STATE_REWARD      = "REWARD"
 STATE_ITI         = "ITI"
 
-DEFAULT_REWARD_PERCENT = 0.5
-DEFAULT_HOLD_MS = 2000
+DEFAULT_REWARD_PERCENT = 1.0
+DEFAULT_INIT_HOLD_MS = 2000
 DEFAULT_CHOICE_TIMEOUT_MS = 20000
+DEFAULT_REWARD_MS = 3000
 DEFAULT_ITI_MS = 6000
 
 BLANK = 0   # display code for "nothing on this side"
@@ -42,8 +44,9 @@ class HorizontalRandomSide(Experiment):
     def setup(self):
         self.REWARD_PERCENT = self.param("REWARD_PERCENT", DEFAULT_REWARD_PERCENT, float)
         self.SHOW_OTHER_ORIENTATION = self.param("SHOW_OTHER_ORIENTATION", True, bool)
-        self.HOLD_MS = self.param("HOLD_MS", DEFAULT_HOLD_MS, int)
+        self.INIT_HOLD_MS = self.param("INIT_HOLD_MS", DEFAULT_INIT_HOLD_MS, int)
         self.CHOICE_TIMEOUT_MS = self.param("CHOICE_TIMEOUT_MS", DEFAULT_CHOICE_TIMEOUT_MS, int)
+        self.REWARD_MS = self.param("REWARD_MS", DEFAULT_REWARD_MS, int)
         self.ITI_MS = self.param("ITI_MS", DEFAULT_ITI_MS, int)
 
         self.horizontal_side = None   # "LEFT" / "RIGHT"
@@ -100,18 +103,22 @@ class HorizontalRandomSide(Experiment):
         reward_str = "REWARD" if rewarded else "NO REWARD"
         self.log(f"  CHOICE {side}  correct={correct}  -> {reward_str}")
         self._write_row(side, correct, reward_str)
-        self._end_trial()
+        self._end_trial(rewarded)
 
     def _timeout(self):
         self.log(f"  TIMEOUT (horizontal was {self.horizontal_side})")
         self._write_row("TIMEOUT", False, "")
-        self._end_trial()
+        self._end_trial(rewarded=False)
 
-    def _end_trial(self):
+    def _end_trial(self, rewarded=False):
         self.completed_trials += 1
-        self.display_black()
-        self.close_gate()               # ITI -> close gate (SERVO 180)
-        self.goto(STATE_ITI, f"  STATE = ITI ({self.ITI_MS} ms)")
+        if rewarded:
+            # keep the gate open + stimulus up for the reward phase, then ITI
+            self.enter_reward_phase()
+        else:
+            self.display_black()
+            self.close_gate()           # ITI -> close gate (SERVO 180)
+            self.goto(STATE_ITI, f"  STATE = ITI ({self.ITI_MS} ms)")
 
     def _write_row(self, chosen_side, correct, reward_str):
         self.write_row([
@@ -142,21 +149,26 @@ SPEC = {
          "default": DEFAULT_REWARD_PERCENT, "min": 0.0, "max": 1.0, "step": 0.05},
         {"key": "SHOW_OTHER_ORIENTATION", "label": "Show other orientation", "type": "bool",
          "default": True},
-        {"key": "HOLD_MS", "label": "Initiation Hold time (ms)", "type": "int",
-         "default": DEFAULT_HOLD_MS, "min": 0, "max": 10000, "step": 100},
+        {"key": "INIT_HOLD_MS", "label": "Initiation Hold time (ms)", "type": "int",
+         "default": DEFAULT_INIT_HOLD_MS, "min": 0, "max": 10000, "step": 100},
         {"key": "CHOICE_TIMEOUT_MS", "label": "Choice timeout (ms)", "type": "int",
          "default": DEFAULT_CHOICE_TIMEOUT_MS, "min": 1000, "max": 120000, "step": 1000},
+        {"key": "REWARD_MS", "label": "Reward phase (ms, gate open)", "type": "int",
+         "default": DEFAULT_REWARD_MS, "min": 0, "max": 60000, "step": 250},
         {"key": "ITI_MS", "label": "Inter-trial interval (ms)", "type": "int",
          "default": DEFAULT_ITI_MS, "min": 0, "max": 60000, "step": 500},
     ],
     "states": [
         {"id": STATE_WAIT_CENTER, "label": "Wait Center Hold", "x": 60,  "y": 60},
         {"id": STATE_WAIT_CHOICE, "label": "Wait Choice", "x": 340, "y": 60},
+        {"id": STATE_REWARD,      "label": "Reward (gate open)", "x": 600, "y": 60},
         {"id": STATE_ITI,         "label": "Inter-Trial Interval", "x": 340, "y": 240},
     ],
     "transitions": [
         {"from": STATE_WAIT_CENTER, "to": STATE_WAIT_CHOICE, "label": "center held / 'c'"},
-        {"from": STATE_WAIT_CHOICE, "to": STATE_ITI,         "label": "choice or timeout"},
+        {"from": STATE_WAIT_CHOICE, "to": STATE_REWARD,      "label": "rewarded choice"},
+        {"from": STATE_WAIT_CHOICE, "to": STATE_ITI,         "label": "no reward / timeout"},
+        {"from": STATE_REWARD,      "to": STATE_ITI,         "label": "reward phase done"},
         {"from": STATE_ITI,         "to": STATE_WAIT_CENTER, "label": "ITI elapsed"},
     ],
 }
