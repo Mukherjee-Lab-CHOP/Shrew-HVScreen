@@ -17,9 +17,11 @@ STATE_REWARD      = "REWARD"
 STATE_ITI         = "ITI"
 
 DEFAULT_MAX_CONSECUTIVE = 3
-DEFAULT_INIT_HOLD_MS = 2000
+DEFAULT_INIT_POKE_MS = 100
+DEFAULT_REWARD_POKE_MS = 100
 DEFAULT_REWARD_MS = 3000
-DEFAULT_ITI_MS  = 6000
+DEFAULT_CORRECT_ITI_WAIT = 2000
+DEFAULT_INCORRECT_ITI_WAIT = 10000
 
 
 class ConsecutiveReward(Experiment):
@@ -35,9 +37,11 @@ class ConsecutiveReward(Experiment):
 
     def setup(self):
         self.MAX_CONSECUTIVE = self.param("MAX_CONSECUTIVE", DEFAULT_MAX_CONSECUTIVE, int)
-        self.INIT_HOLD_MS = self.param("INIT_HOLD_MS", DEFAULT_INIT_HOLD_MS, int)
+        self.INIT_POKE_MS = self.param("INIT_POKE_MS", DEFAULT_INIT_POKE_MS, int)
+        self.REWARD_POKE_MS = self.param("REWARD_POKE_MS", DEFAULT_REWARD_POKE_MS, int)
         self.REWARD_MS = self.param("REWARD_MS", DEFAULT_REWARD_MS, int)
-        self.ITI_MS = self.param("ITI_MS", DEFAULT_ITI_MS, int)
+        self.CORRECT_ITI_WAIT = self.param("CORRECT_ITI_WAIT", DEFAULT_CORRECT_ITI_WAIT, int)
+        self.INCORRECT_ITI_WAIT = self.param("INCORRECT_ITI_WAIT", DEFAULT_INCORRECT_ITI_WAIT, int)
         self.last_side = None
         self.consecutive = 0
 
@@ -47,7 +51,6 @@ class ConsecutiveReward(Experiment):
     # ---- main loop ---------------------------------------------------------
     def run_step(self, keys):
         inp = self.inputs(keys)
-        now = self.clock()
 
         if self.state == STATE_WAIT_CENTER:
             if inp["center"]:
@@ -58,9 +61,7 @@ class ConsecutiveReward(Experiment):
                 self._poke("LEFT")
             elif inp["right"]:
                 self._poke("RIGHT")
-        elif self.state == STATE_ITI:
-            if now - self.state_start >= self.ITI_MS:
-                self.goto(STATE_WAIT_CENTER, WAIT_CENTER_MSG)
+        # REWARD and ITI states are handled centrally by the base step.
         return None
 
     # ---- poke handling -----------------------------------------------------
@@ -84,13 +85,9 @@ class ConsecutiveReward(Experiment):
 
         self.write_row([self.trial_num, self.clock(), side,
                         self.consecutive, self.MAX_CONSECUTIVE, reward_str])
-        self.completed_trials += 1
-        if allowed:
-            # rewarded poke: keep the gate open for the reward phase, then ITI
-            self.enter_reward_phase()
-        else:
-            self.close_gate()           # ITI -> close gate (SERVO 180)
-            self.goto(STATE_ITI, f"STATE = ITI ({self.ITI_MS} ms)")
+        # green correct-square when rewarded, blue otherwise, on the poked side
+        self.display_choice(side, correct=allowed)
+        self.end_trial(correct=allowed, rewarded=allowed)
 
     # ---- run control -------------------------------------------------------
     def skip_trial(self):
@@ -111,12 +108,16 @@ SPEC = {
     "variables": [
         {"key": "MAX_CONSECUTIVE", "label": "Max same-side in a row", "type": "int",
          "default": DEFAULT_MAX_CONSECUTIVE, "min": 1, "max": 100, "step": 1},
-        {"key": "INIT_HOLD_MS", "label": "Initiation Hold time (ms)", "type": "int",
-         "default": DEFAULT_INIT_HOLD_MS, "min": 0, "max": 10000, "step": 100},
+        {"key": "INIT_POKE_MS", "label": "Init poke time (ms)", "type": "int",
+         "default": DEFAULT_INIT_POKE_MS, "min": 0, "max": 10000, "step": 50},
+        {"key": "REWARD_POKE_MS", "label": "Reward poke time (ms)", "type": "int",
+         "default": DEFAULT_REWARD_POKE_MS, "min": 0, "max": 10000, "step": 50},
         {"key": "REWARD_MS", "label": "Reward phase (ms, gate open)", "type": "int",
          "default": DEFAULT_REWARD_MS, "min": 0, "max": 60000, "step": 250},
-        {"key": "ITI_MS", "label": "Inter-trial interval (ms)", "type": "int",
-         "default": DEFAULT_ITI_MS, "min": 0, "max": 60000, "step": 500},
+        {"key": "CORRECT_ITI_WAIT", "label": "ITI after correct (ms)", "type": "int",
+         "default": DEFAULT_CORRECT_ITI_WAIT, "min": 0, "max": 120000, "step": 500},
+        {"key": "INCORRECT_ITI_WAIT", "label": "ITI after incorrect (ms)", "type": "int",
+         "default": DEFAULT_INCORRECT_ITI_WAIT, "min": 0, "max": 120000, "step": 500},
     ],
     "states": [
         {"id": STATE_WAIT_CENTER, "label": "Wait Center Hold", "x": 60,  "y": 60},

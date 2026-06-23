@@ -22,10 +22,12 @@ STATE_REWARD      = "REWARD"
 STATE_ITI         = "ITI"
 
 DEFAULT_REWARD_PERCENT = 1.0
-DEFAULT_INIT_HOLD_MS = 2000
+DEFAULT_INIT_POKE_MS = 100
+DEFAULT_REWARD_POKE_MS = 100
 DEFAULT_CHOICE_TIMEOUT_MS = 20000
 DEFAULT_REWARD_MS = 3000
-DEFAULT_ITI_MS = 6000
+DEFAULT_CORRECT_ITI_WAIT = 2000
+DEFAULT_INCORRECT_ITI_WAIT = 10000
 
 BLANK = 0   # display code for "nothing on this side"
 
@@ -44,10 +46,12 @@ class HorizontalRandomSide(Experiment):
     def setup(self):
         self.REWARD_PERCENT = self.param("REWARD_PERCENT", DEFAULT_REWARD_PERCENT, float)
         self.SHOW_OTHER_ORIENTATION = self.param("SHOW_OTHER_ORIENTATION", True, bool)
-        self.INIT_HOLD_MS = self.param("INIT_HOLD_MS", DEFAULT_INIT_HOLD_MS, int)
+        self.INIT_POKE_MS = self.param("INIT_POKE_MS", DEFAULT_INIT_POKE_MS, int)
+        self.REWARD_POKE_MS = self.param("REWARD_POKE_MS", DEFAULT_REWARD_POKE_MS, int)
         self.CHOICE_TIMEOUT_MS = self.param("CHOICE_TIMEOUT_MS", DEFAULT_CHOICE_TIMEOUT_MS, int)
         self.REWARD_MS = self.param("REWARD_MS", DEFAULT_REWARD_MS, int)
-        self.ITI_MS = self.param("ITI_MS", DEFAULT_ITI_MS, int)
+        self.CORRECT_ITI_WAIT = self.param("CORRECT_ITI_WAIT", DEFAULT_CORRECT_ITI_WAIT, int)
+        self.INCORRECT_ITI_WAIT = self.param("INCORRECT_ITI_WAIT", DEFAULT_INCORRECT_ITI_WAIT, int)
 
         self.horizontal_side = None   # "LEFT" / "RIGHT"
         self.stim_onset_ms = 0
@@ -73,9 +77,7 @@ class HorizontalRandomSide(Experiment):
                 self._choice("LEFT")
             elif inp["right"]:
                 self._choice("RIGHT")
-        elif self.state == STATE_ITI:
-            if now - self.state_start >= self.ITI_MS:
-                self.goto(STATE_WAIT_CENTER, WAIT_CENTER_MSG)
+        # REWARD and ITI states are handled centrally by the base step.
         return None
 
     # ---- trial logic -------------------------------------------------------
@@ -99,26 +101,18 @@ class HorizontalRandomSide(Experiment):
         rewarded = correct and (random.random() < self.REWARD_PERCENT)
         if rewarded:
             self.hw.reward.deliver(side)
-        self.display_choice(side)
+        # green correct-square if the right side was chosen, blue otherwise,
+        # flashed on the side the animal poked.
+        self.display_choice(side, correct=correct)
         reward_str = "REWARD" if rewarded else "NO REWARD"
         self.log(f"  CHOICE {side}  correct={correct}  -> {reward_str}")
         self._write_row(side, correct, reward_str)
-        self._end_trial(rewarded)
+        self.end_trial(correct=correct, rewarded=rewarded)
 
     def _timeout(self):
         self.log(f"  TIMEOUT (horizontal was {self.horizontal_side})")
         self._write_row("TIMEOUT", False, "")
-        self._end_trial(rewarded=False)
-
-    def _end_trial(self, rewarded=False):
-        self.completed_trials += 1
-        if rewarded:
-            # keep the gate open + stimulus up for the reward phase, then ITI
-            self.enter_reward_phase()
-        else:
-            self.display_black()
-            self.close_gate()           # ITI -> close gate (SERVO 180)
-            self.goto(STATE_ITI, f"  STATE = ITI ({self.ITI_MS} ms)")
+        self.end_trial(correct=False, rewarded=False)
 
     def _write_row(self, chosen_side, correct, reward_str):
         self.write_row([
@@ -149,14 +143,18 @@ SPEC = {
          "default": DEFAULT_REWARD_PERCENT, "min": 0.0, "max": 1.0, "step": 0.05},
         {"key": "SHOW_OTHER_ORIENTATION", "label": "Show other orientation", "type": "bool",
          "default": True},
-        {"key": "INIT_HOLD_MS", "label": "Initiation Hold time (ms)", "type": "int",
-         "default": DEFAULT_INIT_HOLD_MS, "min": 0, "max": 10000, "step": 100},
+        {"key": "INIT_POKE_MS", "label": "Init poke time (ms)", "type": "int",
+         "default": DEFAULT_INIT_POKE_MS, "min": 0, "max": 10000, "step": 50},
+        {"key": "REWARD_POKE_MS", "label": "Reward poke time (ms)", "type": "int",
+         "default": DEFAULT_REWARD_POKE_MS, "min": 0, "max": 10000, "step": 50},
         {"key": "CHOICE_TIMEOUT_MS", "label": "Choice timeout (ms)", "type": "int",
          "default": DEFAULT_CHOICE_TIMEOUT_MS, "min": 1000, "max": 120000, "step": 1000},
         {"key": "REWARD_MS", "label": "Reward phase (ms, gate open)", "type": "int",
          "default": DEFAULT_REWARD_MS, "min": 0, "max": 60000, "step": 250},
-        {"key": "ITI_MS", "label": "Inter-trial interval (ms)", "type": "int",
-         "default": DEFAULT_ITI_MS, "min": 0, "max": 60000, "step": 500},
+        {"key": "CORRECT_ITI_WAIT", "label": "ITI after correct (ms)", "type": "int",
+         "default": DEFAULT_CORRECT_ITI_WAIT, "min": 0, "max": 120000, "step": 500},
+        {"key": "INCORRECT_ITI_WAIT", "label": "ITI after incorrect (ms)", "type": "int",
+         "default": DEFAULT_INCORRECT_ITI_WAIT, "min": 0, "max": 120000, "step": 500},
     ],
     "states": [
         {"id": STATE_WAIT_CENTER, "label": "Wait Center Hold", "x": 60,  "y": 60},

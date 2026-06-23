@@ -4,6 +4,16 @@ Everything the original cue.ino hard-coded as `const` settings lives here so the
 firmware stays a dumb I/O layer and all behaviour is tunable from one place.
 """
 
+import os
+
+# ---- Ambient sound ---------------------------------------------------------
+# Looping background hiss played from the COMPUTER (or attached speaker) while an
+# experiment waits for the shrew to initiate at the centre port.
+AMBIENT_ENABLED = True
+AMBIENT_VOLUME  = 0.3        # 0.0 .. 1.0
+AMBIENT_FILE    = os.path.join(os.path.dirname(os.path.abspath(__file__)),
+                               "sounds", "ambient_noise.wav")
+
 # ---- Serial ----------------------------------------------------------------
 DEFAULT_BAUD = 115200
 DEFAULT_PORT = "COM5"    # pre-selected / auto-connected in the GUI when present

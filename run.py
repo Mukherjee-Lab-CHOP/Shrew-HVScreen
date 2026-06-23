@@ -54,6 +54,7 @@ FIGURES_DIR = os.path.join(HERE, "figures")
 FIG_HORIZONTAL = os.path.join(FIGURES_DIR, "orientation_horizontal.png")
 FIG_VERTICAL   = os.path.join(FIGURES_DIR, "orientation_vertical.png")
 FIG_OVERLAY    = os.path.join(FIGURES_DIR, "correct_square.png")
+FIG_INCORRECT  = os.path.join(FIGURES_DIR, "incorrect_square.png")
 
 
 def discover_experiments():
@@ -238,6 +239,7 @@ def main():
 
     # ---- Display -----------------------------------------------------------
     display = Display(fig1=args.fig1, fig2=args.fig2, fig3=args.fig3,
+                      fig_incorrect=FIG_INCORRECT,
                       screen_index=args.screen, windowed=args.windowed,
                       highlight_ms=args.highlight_ms, enabled=not args.no_display)
     display.start()

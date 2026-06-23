@@ -64,12 +64,13 @@ def _windows_display_geometries():
 
 class Display:
     def __init__(self, fig1="fig1.png", fig2="fig2.png", fig3="fig3.png",
-                 screen_index=None, windowed=False,
+                 fig_incorrect=None, screen_index=None, windowed=False,
                  highlight_ms=DEFAULT_HIGHLIGHT_MS, enabled=True):
         # screen_index None = auto (prefer external/HDMI display, else primary).
         self.fig1_path = fig1
         self.fig2_path = fig2
         self.fig3_path = fig3
+        self.fig_incorrect_path = fig_incorrect
         self.screen_index = screen_index
         self.windowed = windowed
         self.highlight_ms = highlight_ms
@@ -80,6 +81,7 @@ class Display:
         self._screen = None
         self._fig = {}
         self._fig3 = None
+        self._fig_incorrect = None
         self._cur_l = None
         self._cur_r = None
         self._overlay_side = None       # "L" / "R" / None
@@ -97,6 +99,11 @@ class Display:
             self._fig[1] = self._load(self.fig1_path)
             self._fig[2] = self._load(self.fig2_path)
             self._fig3 = self._load(self.fig3_path)
+            if self.fig_incorrect_path:
+                try:
+                    self._fig_incorrect = self._load(self.fig_incorrect_path)
+                except Exception:
+                    self._fig_incorrect = None
             self._set_black()
             return True
         except Exception as e:
@@ -170,12 +177,13 @@ class Display:
         self._pending_black = False
         self._render(self._cur_l, self._cur_r)
 
-    def choice(self, side):
+    def choice(self, side, correct=True):
         if not self.enabled:
             return
         self._overlay_side = "L" if str(side).upper() == "LEFT" else "R"
+        overlay = self._fig3 if correct else (self._fig_incorrect or self._fig3)
         self._overlay_until = pygame.time.get_ticks() + self.highlight_ms
-        self._render(self._cur_l, self._cur_r, self._fig3, self._overlay_side)
+        self._render(self._cur_l, self._cur_r, overlay, self._overlay_side)
 
     def black(self):
         if not self.enabled:

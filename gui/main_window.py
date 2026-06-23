@@ -596,7 +596,7 @@ class MainWindow(QtWidgets.QMainWindow):
         if kind == "show":
             self.stim_scene.show(op[1], op[2])
         elif kind == "choice":
-            self.stim_scene.choice(op[1])
+            self.stim_scene.choice(op[1], op[2] if len(op) > 2 else True)
         elif kind == "black":
             self.stim_scene.black()
 

@@ -17,7 +17,8 @@ FIG_FILES = {
     1: os.path.join(FIG_DIR, "orientation_horizontal.png"),
     2: os.path.join(FIG_DIR, "orientation_vertical.png"),
 }
-OVERLAY_FILE = os.path.join(FIG_DIR, "correct_square.png")
+OVERLAY_CORRECT = os.path.join(FIG_DIR, "correct_square.png")
+OVERLAY_INCORRECT = os.path.join(FIG_DIR, "incorrect_square.png")
 
 
 class StimulusScene(QtCore.QObject):
@@ -30,11 +31,13 @@ class StimulusScene(QtCore.QObject):
         self.scene.setSceneRect(0, 0, 1280, 720)
 
         self._pix = {k: self._load(p) for k, p in FIG_FILES.items()}
-        self._overlay = self._load(OVERLAY_FILE)
+        self._overlay_correct = self._load(OVERLAY_CORRECT)
+        self._overlay_incorrect = self._load(OVERLAY_INCORRECT)
 
         self._cur_l = None
         self._cur_r = None
         self._overlay_side = None
+        self._overlay_kind = "correct"      # "correct" (green) | "incorrect" (blue)
         self._pending_black = False
         self.highlight_ms = highlight_ms
 
@@ -61,8 +64,9 @@ class StimulusScene(QtCore.QObject):
         self._overlay_timer.stop()
         self._render()
 
-    def choice(self, side):
+    def choice(self, side, correct=True):
         self._overlay_side = "L" if str(side).upper() == "LEFT" else "R"
+        self._overlay_kind = "correct" if correct else "incorrect"
         self._render()
         self._overlay_timer.start(self.highlight_ms)
 
@@ -81,30 +85,44 @@ class StimulusScene(QtCore.QObject):
         self._render()
 
     # ---- drawing -----------------------------------------------------------
+    def _overlay_pixmap(self):
+        return (self._overlay_incorrect if self._overlay_kind == "incorrect"
+                else self._overlay_correct)
+
     def _render(self):
         self.scene.clear()
         rect = self.scene.sceneRect()
         w, h = rect.width(), rect.height()
-        # A side whose code is falsy (0 / None) stays blank (black); only when
-        # BOTH are blank is the whole screen black.
-        if not self._cur_l and not self._cur_r:
+        ov = self._overlay_pixmap()
+        # A side is drawn if it has a figure OR an overlay flashing on it. Only
+        # when neither side has anything is the whole screen black.
+        left_on = bool(self._cur_l) or self._overlay_side == "L"
+        right_on = bool(self._cur_r) or self._overlay_side == "R"
+        if not left_on and not right_on:
             return
         gap = w * 0.04
         half = (w - gap) / 2.0
         max_h = h * 0.9
-        if self._cur_l:
-            self._place(self._pix.get(self._cur_l), half / 2.0, h / 2.0, half, max_h,
-                        self._overlay if self._overlay_side == "L" else None)
-        if self._cur_r:
-            self._place(self._pix.get(self._cur_r), half + gap + half / 2.0, h / 2.0,
-                        half, max_h, self._overlay if self._overlay_side == "R" else None)
+        if left_on:
+            self._place(self._pix.get(self._cur_l) if self._cur_l else None,
+                        half / 2.0, h / 2.0, half, max_h,
+                        ov if self._overlay_side == "L" else None)
+        if right_on:
+            self._place(self._pix.get(self._cur_r) if self._cur_r else None,
+                        half + gap + half / 2.0, h / 2.0, half, max_h,
+                        ov if self._overlay_side == "R" else None)
 
     def _place(self, pm, cx, cy, max_w, max_h, overlay):
         if pm is None or pm.isNull():
-            # draw a labelled placeholder box if the image is missing
-            box = QtWidgets.QGraphicsRectItem(cx - max_w / 2, cy - max_h / 2, max_w, max_h)
-            box.setPen(QtGui.QPen(QtGui.QColor(80, 80, 80)))
-            self.scene.addItem(box)
+            # No figure on this side: if an overlay is flashing here, draw just
+            # the square (e.g. nose-poke tasks with no stimulus); else nothing.
+            if overlay is not None and not overlay.isNull():
+                side = min(max_w, max_h) * 0.5
+                sq = overlay.scaled(int(side), int(side), QtCore.Qt.KeepAspectRatio,
+                                    QtCore.Qt.SmoothTransformation)
+                ovi = QtWidgets.QGraphicsPixmapItem(sq)
+                ovi.setOffset(cx - sq.width() / 2.0, cy - sq.height() / 2.0)
+                self.scene.addItem(ovi)
             return
         scaled = pm.scaled(int(max_w), int(max_h), QtCore.Qt.KeepAspectRatio,
                            QtCore.Qt.SmoothTransformation)

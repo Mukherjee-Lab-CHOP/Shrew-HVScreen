@@ -19,8 +19,8 @@ class DisplayProxy:
     def show(self, left_fig, right_fig):
         self._bus.push_render(("show", int(left_fig), int(right_fig)))
 
-    def choice(self, side):
-        self._bus.push_render(("choice", str(side)))
+    def choice(self, side, correct=True):
+        self._bus.push_render(("choice", str(side), bool(correct)))
 
     def black(self):
         self._bus.push_render(("black",))
