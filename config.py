@@ -4,15 +4,29 @@ Everything the original cue.ino hard-coded as `const` settings lives here so the
 firmware stays a dumb I/O layer and all behaviour is tunable from one place.
 """
 
-import os
-
 # ---- Ambient sound ---------------------------------------------------------
-# Looping background hiss played from the COMPUTER (or attached speaker) while an
-# experiment waits for the shrew to initiate at the centre port.
+# Looping background sound played from the COMPUTER (or attached speaker) while
+# an experiment waits for the shrew to initiate at the centre port. The waveform
+# is synthesised on the fly so pitch / speed are fully adjustable.
 AMBIENT_ENABLED = True
+# selectable waveforms (value, GUI label)
+AMBIENT_SOUNDS = ["noise", "sine", "rising", "pulse"]
+AMBIENT_SOUND   = "noise"    # default waveform
 AMBIENT_VOLUME  = 0.3        # 0.0 .. 1.0
-AMBIENT_FILE    = os.path.join(os.path.dirname(os.path.abspath(__file__)),
-                               "sounds", "ambient_noise.wav")
+AMBIENT_PITCH   = 220.0      # base tone frequency (Hz) for tonal waveforms
+AMBIENT_SPEED   = 1.0        # pattern rate multiplier (sweeps/pulses per second, etc.)
+
+# GUI-editable ambient knobs, spliced into every experiment's SPEC variables.
+AMBIENT_VARS = [
+    {"key": "AMBIENT_SOUND", "label": "Ambient sound", "type": "choice",
+     "options": AMBIENT_SOUNDS, "default": AMBIENT_SOUND},
+    {"key": "AMBIENT_PITCH", "label": "Ambient pitch (Hz)", "type": "float",
+     "default": AMBIENT_PITCH, "min": 40.0, "max": 4000.0, "step": 10.0},
+    {"key": "AMBIENT_SPEED", "label": "Ambient speed (x)", "type": "float",
+     "default": AMBIENT_SPEED, "min": 0.1, "max": 10.0, "step": 0.1},
+    {"key": "AMBIENT_VOLUME", "label": "Ambient volume", "type": "float",
+     "default": AMBIENT_VOLUME, "min": 0.0, "max": 1.0, "step": 0.05},
+]
 
 # ---- Serial ----------------------------------------------------------------
 DEFAULT_BAUD = 115200

@@ -28,6 +28,12 @@ class VariablesPanel(QtWidgets.QWidget):
             if vtype == "bool":
                 w = QtWidgets.QCheckBox()
                 w.setChecked(bool(default))
+            elif vtype == "choice":
+                w = QtWidgets.QComboBox()
+                opts = [str(o) for o in var.get("options", [])]
+                w.addItems(opts)
+                if str(default) in opts:
+                    w.setCurrentText(str(default))
             elif vtype == "int":
                 w = QtWidgets.QSpinBox()
                 w.setRange(int(var.get("min", 0)), int(var.get("max", 1_000_000)))
@@ -51,6 +57,8 @@ class VariablesPanel(QtWidgets.QWidget):
             w, vtype = editor
             if vtype == "bool":
                 w.setChecked(bool(val))
+            elif vtype == "choice":
+                w.setCurrentText(str(val))
             elif vtype == "int":
                 w.setValue(int(val))
             else:
@@ -61,6 +69,8 @@ class VariablesPanel(QtWidgets.QWidget):
         for key, (w, vtype) in self._editors.items():
             if vtype == "bool":
                 out[key] = w.isChecked()
+            elif vtype == "choice":
+                out[key] = w.currentText()
             elif vtype == "int":
                 out[key] = int(w.value())
             else:

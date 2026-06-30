@@ -15,7 +15,7 @@ import random
 
 from config import (
     ORIENT_NONE, ORIENT_HORIZONTAL, ORIENT_VERTICAL, ORIENT_NAME,
-    CHOICE_TIMEOUT_MS, P_STIM_HORIZONTAL, P_STIM_VERTICAL,
+    CHOICE_TIMEOUT_MS, P_STIM_HORIZONTAL, P_STIM_VERTICAL, AMBIENT_VARS,
 )
 
 DEFAULT_INIT_POKE_MS = 100
@@ -284,6 +284,7 @@ SPEC = {
          "default": DEFAULT_CORRECT_ITI_WAIT, "min": 0, "max": 120000, "step": 500},
         {"key": "INCORRECT_ITI_WAIT", "label": "ITI after incorrect (ms)", "type": "int",
          "default": DEFAULT_INCORRECT_ITI_WAIT, "min": 0, "max": 120000, "step": 500},
+        *AMBIENT_VARS,
     ],
     "states": [
         {"id": STATE_WAIT_CENTER, "label": "Wait Center Hold", "x": 60,  "y": 60},

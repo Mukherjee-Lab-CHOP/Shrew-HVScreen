@@ -9,6 +9,7 @@ State machine:  WAIT_CENTER_HOLD --center--> WAIT_POKE --poke L/R--> ITI
                 --elapsed--> WAIT_CENTER_HOLD
 """
 
+from config import AMBIENT_VARS
 from experiments._base import Experiment, WAIT_CENTER_MSG
 
 STATE_WAIT_CENTER = "WAIT_CENTER_HOLD"
@@ -118,6 +119,7 @@ SPEC = {
          "default": DEFAULT_CORRECT_ITI_WAIT, "min": 0, "max": 120000, "step": 500},
         {"key": "INCORRECT_ITI_WAIT", "label": "ITI after incorrect (ms)", "type": "int",
          "default": DEFAULT_INCORRECT_ITI_WAIT, "min": 0, "max": 120000, "step": 500},
+        *AMBIENT_VARS,
     ],
     "states": [
         {"id": STATE_WAIT_CENTER, "label": "Wait Center Hold", "x": 60,  "y": 60},
