@@ -113,27 +113,21 @@ class StimulusScene(QtCore.QObject):
                         ov if self._overlay_side == "R" else None)
 
     def _place(self, pm, cx, cy, max_w, max_h, overlay):
-        if pm is None or pm.isNull():
-            # No figure on this side: if an overlay is flashing here, draw just
-            # the square (e.g. nose-poke tasks with no stimulus); else nothing.
-            if overlay is not None and not overlay.isNull():
-                side = min(max_w, max_h) * 0.5
-                sq = overlay.scaled(int(side), int(side), QtCore.Qt.KeepAspectRatio,
-                                    QtCore.Qt.SmoothTransformation)
-                ovi = QtWidgets.QGraphicsPixmapItem(sq)
-                ovi.setOffset(cx - sq.width() / 2.0, cy - sq.height() / 2.0)
-                self.scene.addItem(ovi)
-            return
-        scaled = pm.scaled(int(max_w), int(max_h), QtCore.Qt.KeepAspectRatio,
-                           QtCore.Qt.SmoothTransformation)
-        item = QtWidgets.QGraphicsPixmapItem(scaled)
-        item.setOffset(cx - scaled.width() / 2.0, cy - scaled.height() / 2.0)
-        self.scene.addItem(item)
+        if pm is not None and not pm.isNull():
+            scaled = pm.scaled(int(max_w), int(max_h), QtCore.Qt.KeepAspectRatio,
+                               QtCore.Qt.SmoothTransformation)
+            item = QtWidgets.QGraphicsPixmapItem(scaled)
+            item.setOffset(cx - scaled.width() / 2.0, cy - scaled.height() / 2.0)
+            self.scene.addItem(item)
+        # The correct (green) / incorrect (blue) square is always the SAME size —
+        # a square fitted to the half-region — whether or not a figure is present,
+        # so the two never look different sizes.
         if overlay is not None and not overlay.isNull():
-            ov = overlay.scaled(scaled.size(), QtCore.Qt.KeepAspectRatio,
+            side = int(min(max_w, max_h))
+            sq = overlay.scaled(side, side, QtCore.Qt.KeepAspectRatio,
                                 QtCore.Qt.SmoothTransformation)
-            ovi = QtWidgets.QGraphicsPixmapItem(ov)
-            ovi.setOffset(cx - ov.width() / 2.0, cy - ov.height() / 2.0)
+            ovi = QtWidgets.QGraphicsPixmapItem(sq)
+            ovi.setOffset(cx - sq.width() / 2.0, cy - sq.height() / 2.0)
             self.scene.addItem(ovi)
 
 

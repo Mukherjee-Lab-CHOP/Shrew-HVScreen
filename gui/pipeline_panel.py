@@ -187,6 +187,7 @@ class PipelinePanel(QtWidgets.QWidget):
     pipeline_changed = QtCore.Signal()      # tree or pipeline set changed -> persist
     node_selected = QtCore.Signal(str)      # selected node id ("" when none)
     add_requested = QtCore.Signal()         # create a new stage via the side editor
+    start_from_here = QtCore.Signal()       # run starting at the selected node
 
     def __init__(self, registry, parent=None):
         super().__init__(parent)
@@ -220,6 +221,8 @@ class PipelinePanel(QtWidgets.QWidget):
         self.tree.currentItemChanged.connect(self._on_current_changed)
         self.tree.itemDoubleClicked.connect(self._on_double_clicked)
         self.tree.reordered.connect(self._on_reordered)
+        self.tree.setContextMenuPolicy(QtCore.Qt.CustomContextMenu)
+        self.tree.customContextMenuRequested.connect(self._show_context_menu)
         layout.addWidget(self.tree, 1)
 
         row = QtWidgets.QHBoxLayout()
@@ -268,6 +271,48 @@ class PipelinePanel(QtWidgets.QWidget):
     def get_nodes(self):
         """Deep copy of the active pipeline's node tree (for the worker)."""
         return copy.deepcopy(self._nodes)
+
+    def nodes_from_selected(self):
+        """Deep copy of the pipeline starting at the selected node's top-level
+        block (the top-level stage, or the loop that contains the selection),
+        running on to the end. None if nothing is selected."""
+        nid = self.selected_id()
+        if nid is None:
+            return None
+        for i, nd in enumerate(self._nodes):
+            if self._contains(nd, nid):
+                return copy.deepcopy(self._nodes[i:])
+        return None
+
+    def _contains(self, node, nid):
+        if node["id"] == nid:
+            return True
+        return any(self._contains(c, nid) for c in node.get("children", []))
+
+    # ---- right-click menu --------------------------------------------------
+    def _show_context_menu(self, pos):
+        item = self.tree.itemAt(pos)
+        if item is not None:
+            self.tree.setCurrentItem(item)          # right-click selects the row
+        has = item is not None and not self._busy
+        menu = QtWidgets.QMenu(self)
+        start_act = menu.addAction("▶ Start from here")
+        start_act.setEnabled(has)
+        menu.addSeparator()
+        edit_act = menu.addAction("Edit…")
+        dup_act = menu.addAction("Duplicate")
+        rem_act = menu.addAction("Remove")
+        for a in (edit_act, dup_act, rem_act):
+            a.setEnabled(has)
+        chosen = menu.exec(self.tree.viewport().mapToGlobal(pos))
+        if chosen is start_act:
+            self.start_from_here.emit()
+        elif chosen is edit_act:
+            self._on_double_clicked(item, 0)
+        elif chosen is dup_act:
+            self.duplicate_selected()
+        elif chosen is rem_act:
+            self.remove_selected()
 
     # ---- node lookup -------------------------------------------------------
     def _index(self):

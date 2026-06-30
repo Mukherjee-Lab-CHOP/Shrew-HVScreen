@@ -105,6 +105,7 @@ class MainWindow(QtWidgets.QMainWindow):
         # left: pipeline
         self.pipeline = PipelinePanel(self.registry)
         self.pipeline.node_selected.connect(self._on_node_selected)
+        self.pipeline.start_from_here.connect(lambda: self._start_run(from_selected=True))
         hsplit.addWidget(self.pipeline)
 
         # middle: CSV + mirror
@@ -146,10 +147,14 @@ class MainWindow(QtWidgets.QMainWindow):
         row = QtWidgets.QHBoxLayout()
         self.start_btn = QtWidgets.QPushButton("▶ Start")
         self.start_btn.clicked.connect(self._start_run)
+        self.start_sel_btn = QtWidgets.QPushButton("▶ From selected")
+        self.start_sel_btn.setToolTip("Start the run from the selected stage/loop onward")
+        self.start_sel_btn.clicked.connect(lambda: self._start_run(from_selected=True))
         self.stop_btn = QtWidgets.QPushButton("■ Stop")
         self.stop_btn.clicked.connect(self._stop_run)
         self.stop_btn.setEnabled(False)
         row.addWidget(self.start_btn)
+        row.addWidget(self.start_sel_btn)
         row.addWidget(self.stop_btn)
 
         row.addSpacing(20)
@@ -521,10 +526,18 @@ class MainWindow(QtWidgets.QMainWindow):
             self.logs.add_print(f"[control] set trial #{n} — ignored (press Start first)")
 
     # ---- run control -------------------------------------------------------
-    def _start_run(self):
+    def _start_run(self, from_selected=False):
         if self.worker is not None and self.worker.isRunning():
             return
-        pipeline = self.pipeline.get_nodes()
+        if from_selected:
+            pipeline = self.pipeline.nodes_from_selected()
+            if not pipeline:
+                QtWidgets.QMessageBox.warning(
+                    self, "No selection",
+                    "Select a stage or loop in the pipeline to start from.")
+                return
+        else:
+            pipeline = self.pipeline.get_nodes()
         if not pipeline:
             QtWidgets.QMessageBox.warning(self, "No pipeline", "Add at least one stage.")
             return
@@ -539,6 +552,7 @@ class MainWindow(QtWidgets.QMainWindow):
         self.worker.finished.connect(self._on_worker_finished)
 
         self.start_btn.setEnabled(False)
+        self.start_sel_btn.setEnabled(False)
         self.stop_btn.setEnabled(True)
         self.serial_bar.set_busy(True)
         self.pipeline.set_busy(True)
@@ -552,6 +566,7 @@ class MainWindow(QtWidgets.QMainWindow):
 
     def _on_worker_finished(self):
         self.start_btn.setEnabled(True)
+        self.start_sel_btn.setEnabled(True)
         self.stop_btn.setEnabled(False)
         self.serial_bar.set_busy(False)
         self.pipeline.set_busy(False)

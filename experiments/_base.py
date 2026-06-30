@@ -29,8 +29,8 @@ import os
 import time
 from datetime import datetime
 
-from config import (CH_LEFT, CH_CENTER, CH_RIGHT,
-                    AMBIENT_ENABLED, AMBIENT_VOLUME, AMBIENT_FILE)
+from config import (CH_LEFT, CH_CENTER, CH_RIGHT, AMBIENT_ENABLED,
+                    AMBIENT_SOUND, AMBIENT_PITCH, AMBIENT_SPEED, AMBIENT_VOLUME)
 from audio import Ambient
 
 # Logged whenever an experiment returns to the trial-start state.
@@ -87,8 +87,17 @@ class Experiment:
 
         self._open_csv(csv_path)
 
-        # ambient background hiss while waiting for centre initiation
-        self.ambient = Ambient(AMBIENT_FILE, AMBIENT_VOLUME) if AMBIENT_ENABLED else None
+        # ambient background sound while waiting for centre initiation
+        # (waveform / pitch / speed / volume are GUI-tunable per experiment)
+        if AMBIENT_ENABLED:
+            self.ambient = Ambient(
+                kind=self.param("AMBIENT_SOUND", AMBIENT_SOUND, str),
+                pitch=self.param("AMBIENT_PITCH", AMBIENT_PITCH, float),
+                speed=self.param("AMBIENT_SPEED", AMBIENT_SPEED, float),
+                volume=self.param("AMBIENT_VOLUME", AMBIENT_VOLUME, float),
+            )
+        else:
+            self.ambient = None
 
         self.setup()
         if self.BLANK_ON_START:
