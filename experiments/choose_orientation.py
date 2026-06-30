@@ -12,6 +12,7 @@ Experiment base class; this module holds only the cue-task logic.
 """
 
 import random
+import hardware as hw
 
 from config import (
     ORIENT_NONE, ORIENT_HORIZONTAL, ORIENT_VERTICAL, ORIENT_NAME,
