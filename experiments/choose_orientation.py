@@ -15,21 +15,14 @@ import random
 
 from config import (
     ORIENT_NONE, ORIENT_HORIZONTAL, ORIENT_VERTICAL, ORIENT_NAME,
-    CHOICE_TIMEOUT_MS, P_STIM_HORIZONTAL, P_STIM_VERTICAL,
+    HOLD_MS, CHOICE_TIMEOUT_MS, ITI_MS,
+    P_STIM_HORIZONTAL, P_STIM_VERTICAL,
 )
-
-DEFAULT_INIT_POKE_MS = 100
-DEFAULT_REWARD_POKE_MS = 100
-DEFAULT_CORRECT_ITI_WAIT = 2000
-DEFAULT_INCORRECT_ITI_WAIT = 10000
 from experiments._base import Experiment, WAIT_CENTER_MSG
 
 STATE_WAIT_CENTER = "WAIT_CENTER_HOLD"
 STATE_WAIT_CHOICE = "WAIT_CHOICE_HOLD"
-STATE_REWARD      = "REWARD"
 STATE_ITI         = "ITI"
-
-DEFAULT_REWARD_MS = 3000
 
 
 class CueExperiment(Experiment):
@@ -58,12 +51,9 @@ class CueExperiment(Experiment):
         # ---- tunable parameters (GUI-editable; fall back to config defaults) -
         self.P_STIM_HORIZONTAL = self.param("P_STIM_HORIZONTAL", P_STIM_HORIZONTAL, float)
         self.P_STIM_VERTICAL   = self.param("P_STIM_VERTICAL", P_STIM_VERTICAL, float)
-        self.INIT_POKE_MS      = self.param("INIT_POKE_MS", DEFAULT_INIT_POKE_MS, int)
-        self.REWARD_POKE_MS    = self.param("REWARD_POKE_MS", DEFAULT_REWARD_POKE_MS, int)
+        self.HOLD_MS           = self.param("HOLD_MS", HOLD_MS, int)
         self.CHOICE_TIMEOUT_MS = self.param("CHOICE_TIMEOUT_MS", CHOICE_TIMEOUT_MS, int)
-        self.REWARD_MS         = self.param("REWARD_MS", DEFAULT_REWARD_MS, int)
-        self.CORRECT_ITI_WAIT  = self.param("CORRECT_ITI_WAIT", DEFAULT_CORRECT_ITI_WAIT, int)
-        self.INCORRECT_ITI_WAIT = self.param("INCORRECT_ITI_WAIT", DEFAULT_INCORRECT_ITI_WAIT, int)
+        self.ITI_MS            = self.param("ITI_MS", ITI_MS, int)
 
         # ---- reward / stimulus state (mirrors cue.ino globals) -------------
         self.horizontal_rewarded = False
@@ -99,7 +89,11 @@ class CueExperiment(Experiment):
                 self._handle_choice("LEFT", self.left_fig)
             elif inp["right"]:
                 self._handle_choice("RIGHT", self.right_fig)
-        # REWARD and ITI states are handled centrally by the base step.
+        elif self.state == STATE_ITI:
+            hw.motor.turn(180)
+
+            if now - self.state_start >= self.ITI_MS:
+                self._end_iti()
         return None
 
     # ---- trial logic (ported from cue.ino) ---------------------------------
@@ -148,8 +142,8 @@ class CueExperiment(Experiment):
 
         self._print_banner()
 
-        # Centre initiation done -> open the gate (SERVO 60), like "Gate open".
-        self.open_gate()
+        # Gate opens at stimulus onset and stays open through the ITI.
+        self.hw.motor.open()
         self.display_show(self.left_fig, self.right_fig)
         self.stim_onset_ms = self.clock()
         self.goto(STATE_WAIT_CHOICE,
@@ -174,23 +168,25 @@ class CueExperiment(Experiment):
         else:
             self.log("RESULT: no reward.")
 
-        # green correct-square when rewarded, blue incorrect-square otherwise,
-        # flashed on the side the animal chose.
-        self.display_choice(side, correct=rewarded)
+        self.display_choice(side)
         self._write_trial_row(side, chosen_fig, choice_timestamp, reaction_time_ms,
                               "REWARD" if rewarded else "NO REWARD")
-        self._update_unchosen(chosen_fig)
-        self.end_trial(correct=rewarded, rewarded=rewarded)
+        self._end_trial(chosen_fig)
 
     def _handle_timeout(self):
         self.log(f"TRIAL {self.trial_num} TIMEOUT — no choice made.")
         # Probabilities/sides/onset are still known for a timed-out trial; only
         # the choice-specific fields are blank.
         self._write_trial_row("TIMEOUT", ORIENT_NONE, "", "", "")
-        self._update_unchosen(ORIENT_NONE)
-        self.end_trial(correct=False, rewarded=False)
+        self._end_trial(ORIENT_NONE)
 
-    def _update_unchosen(self, choice):
+    def _end_trial(self, choice):
+        # Clear the screen (deferred behind any active choice overlay) and
+        # enter the ITI. Gate stays open until the ITI ends.
+        self.completed_trials += 1
+        self.display_black()
+        self.goto(STATE_ITI, f"STATE = ITI ({self.ITI_MS} ms)")
+
         if choice == ORIENT_HORIZONTAL:
             self.horizontal_unchosen = 0
             self.vertical_unchosen += 1
@@ -199,21 +195,24 @@ class CueExperiment(Experiment):
             self.horizontal_unchosen += 1
         # timeout: counters unchanged (matches endTrial(ORIENT_NONE))
 
+    def _end_iti(self):
+        self.hw.motor.close()
+        self.goto(STATE_WAIT_CENTER, WAIT_CENTER_MSG)
+
     # ---- run control -------------------------------------------------------
     def skip_trial(self):
-        """Count a skipped trial and begin anew, from ANY state. Mid-trial it
-        skips the in-progress trial; at the start (or in the ITI) it still
-        records a fresh skipped trial. Either way it returns to WAIT_CENTER."""
-        if self.state != STATE_WAIT_CHOICE:
-            # no trial in progress -> open a fresh (blank) trial to count it
-            self.trial_num += 1
-            self.trial_start_ms = self.clock()
-        self.log(f"TRIAL {self.trial_num} SKIPPED — beginning anew.")
-        self._write_trial_row("SKIP", ORIENT_NONE, "", "", "")
-        self.completed_trials += 1
-        self.display_black()
-        self.close_gate()
-        self.goto(STATE_WAIT_CENTER, WAIT_CENTER_MSG)
+        """Abort the current trial and move on. From WAIT_CHOICE it records a
+        SKIP row and enters the ITI; from the ITI it cuts the ITI short and
+        returns to WAIT_CENTER; from WAIT_CENTER there's nothing to skip."""
+        if self.state == STATE_WAIT_CHOICE:
+            self.log(f"TRIAL {self.trial_num} SKIPPED — moving to next trial.")
+            self._write_trial_row("SKIP", ORIENT_NONE, "", "", "")
+            self._end_trial(ORIENT_NONE)
+        elif self.state == STATE_ITI:
+            self.log("ITI skipped — ready for next trial.")
+            self._end_iti()
+        else:
+            self.log("Already waiting to start the next trial (nothing to skip).")
 
     # ---- CSV ---------------------------------------------------------------
     def _write_trial_row(self, chosen_side, chosen_fig, choice_timestamp,
@@ -272,30 +271,21 @@ SPEC = {
          "default": P_STIM_HORIZONTAL, "min": 0.0, "max": 1.0, "step": 0.05},
         {"key": "P_STIM_VERTICAL", "label": "P(vertical reward)", "type": "float",
          "default": P_STIM_VERTICAL, "min": 0.0, "max": 1.0, "step": 0.05},
-        {"key": "INIT_POKE_MS", "label": "Init poke time (ms)", "type": "int",
-         "default": DEFAULT_INIT_POKE_MS, "min": 0, "max": 10000, "step": 50},
-        {"key": "REWARD_POKE_MS", "label": "Reward poke time (ms)", "type": "int",
-         "default": DEFAULT_REWARD_POKE_MS, "min": 0, "max": 10000, "step": 50},
+        {"key": "HOLD_MS", "label": "Initiation Hold time (ms)", "type": "int",
+         "default": HOLD_MS, "min": 0, "max": 10000, "step": 100},
         {"key": "CHOICE_TIMEOUT_MS", "label": "Choice timeout (ms)", "type": "int",
          "default": CHOICE_TIMEOUT_MS, "min": 1000, "max": 120000, "step": 1000},
-        {"key": "REWARD_MS", "label": "Reward phase (ms, gate open)", "type": "int",
-         "default": DEFAULT_REWARD_MS, "min": 0, "max": 60000, "step": 250},
-        {"key": "CORRECT_ITI_WAIT", "label": "ITI after correct (ms)", "type": "int",
-         "default": DEFAULT_CORRECT_ITI_WAIT, "min": 0, "max": 120000, "step": 500},
-        {"key": "INCORRECT_ITI_WAIT", "label": "ITI after incorrect (ms)", "type": "int",
-         "default": DEFAULT_INCORRECT_ITI_WAIT, "min": 0, "max": 120000, "step": 500},
+        {"key": "ITI_MS", "label": "Inter-trial interval (ms)", "type": "int",
+         "default": ITI_MS, "min": 0, "max": 60000, "step": 500},
     ],
     "states": [
         {"id": STATE_WAIT_CENTER, "label": "Wait Center Hold", "x": 60,  "y": 60},
         {"id": STATE_WAIT_CHOICE, "label": "Wait Choice Hold", "x": 340, "y": 60},
-        {"id": STATE_REWARD,      "label": "Reward (gate open)", "x": 600, "y": 60},
         {"id": STATE_ITI,         "label": "Inter-Trial Interval", "x": 340, "y": 260},
     ],
     "transitions": [
         {"from": STATE_WAIT_CENTER, "to": STATE_WAIT_CHOICE, "label": "center held / 'c'"},
-        {"from": STATE_WAIT_CHOICE, "to": STATE_REWARD,      "label": "rewarded choice"},
-        {"from": STATE_WAIT_CHOICE, "to": STATE_ITI,         "label": "no reward / timeout"},
-        {"from": STATE_REWARD,      "to": STATE_ITI,         "label": "reward phase done"},
+        {"from": STATE_WAIT_CHOICE, "to": STATE_ITI,         "label": "choice or timeout"},
         {"from": STATE_ITI,         "to": STATE_WAIT_CENTER, "label": "ITI elapsed"},
     ],
 }
