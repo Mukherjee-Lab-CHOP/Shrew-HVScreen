@@ -169,7 +169,7 @@ class CueExperiment(Experiment):
         else:
             self.log("RESULT: no reward.")
 
-        self.display_choice(side)
+        self.display_choice(side, correct=rewarded)
         self._write_trial_row(side, chosen_fig, choice_timestamp, reaction_time_ms,
                               "REWARD" if rewarded else "NO REWARD")
         self._end_trial(chosen_fig)
