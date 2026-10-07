@@ -63,7 +63,7 @@ A PySide6 control panel that wires the whole system together:
   **state-machine node graph** (drag nodes; the live current state highlights
   during a run). "Add as pipeline stage →" pushes the current setup left.
 - **Middle** — the **live CSV** being written and a **mirror** of the secondary
-  (stimulus) screen.
+  (stimulus) screen, plus an optional **live camera preview**.
 - **Bottom** — two logs: **commands sent out** to the Arduino, and **prints /
   events** (experiment logs + inbound firmware lines).
 
@@ -72,6 +72,29 @@ detached (no Arduino) for dry runs — commands are logged but not sent. The
 state-machine playground *tunes* the existing coded experiments (in
 `experiments/`); each experiment exposes a `SPEC` describing its variables and
 state graph.
+
+### Camera preview
+
+In the camera panel, select a camera (for example, `WBC-0E01`) and click
+**Start preview**. **Refresh** rescans devices; the list also updates when
+cameras are connected or disconnected. **Stop preview** releases the camera.
+Preview starts off and is independent of the Arduino connection and experiment
+Start/Stop controls. The stimulus mirror remains visible separately.
+**Rotate 180 degrees** is enabled by default on each GUI launch for the mounted
+camera. Uncheck it if another camera is already upright. You can toggle this
+while preview is running; it rotates only the camera preview, not the stimulus
+mirror. Changes to the checkbox last until the GUI is closed.
+
+This uses Qt Multimedia from the existing PySide6 dependency; no additional
+package or Arduino firmware change is needed. It previews only: video is not
+recorded or synchronized with trial timestamps. Camera selection is for devices
+recognized by Windows, not network stream URLs or vendor-specific camera SDKs.
+
+If preview fails, close other camera apps (including Windows Camera) and check
+**Settings > Privacy & security > Camera** on Windows 11, or
+**Settings > Privacy > Camera** on Windows 10. Allow camera access for desktop
+apps. Errors appear in the camera panel and the prints/events log. Stopping
+preview or closing the GUI releases the camera.
 
 ## Run (command line)
 
