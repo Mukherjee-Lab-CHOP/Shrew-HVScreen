@@ -3,7 +3,7 @@
 Layout:
     top     : serial bar (COM/connect, stimulus screen) + run controls
     left    : pipeline builder
-    middle  : live CSV table + stimulus mirror
+    middle  : live CSV table + stimulus mirror + optional camera preview
     right   : experiment selector, variable editors, state-machine node graph
     bottom  : commands-out log | prints/events log
 
@@ -31,6 +31,7 @@ from .pipeline_panel import PipelinePanel            # noqa: E402
 from .variables_panel import VariablesPanel          # noqa: E402
 from .state_graph import StateGraphView              # noqa: E402
 from .csv_view import CsvView                        # noqa: E402
+from .camera_panel import CameraPanel                # noqa: E402
 from .logs_panel import LogsPanel                    # noqa: E402
 from .stimulus import StimulusScene, MirrorView, StimulusWindow   # noqa: E402
 from .display_proxy import DisplayProxy              # noqa: E402
@@ -108,7 +109,7 @@ class MainWindow(QtWidgets.QMainWindow):
         self.pipeline.start_from_here.connect(lambda: self._start_run(from_selected=True))
         hsplit.addWidget(self.pipeline)
 
-        # middle: CSV + mirror
+        # middle: CSV + mirror + camera
         mid = QtWidgets.QSplitter(QtCore.Qt.Vertical)
         self.csv_view = CsvView()
         mid_top = QtWidgets.QWidget(); mtl = QtWidgets.QVBoxLayout(mid_top)
@@ -123,6 +124,9 @@ class MainWindow(QtWidgets.QMainWindow):
         self.mirror.setMinimumHeight(180)
         mbl.addWidget(self.mirror)
         mid.addWidget(mirror_box)
+        self.camera_panel = CameraPanel()
+        mid.addWidget(self.camera_panel)
+        mid.setSizes([180, 240, 240])
         hsplit.addWidget(mid)
 
         # right: experiment + variables + state graph
@@ -131,6 +135,7 @@ class MainWindow(QtWidgets.QMainWindow):
 
         # bottom: logs
         self.logs = LogsPanel()
+        self.camera_panel.message.connect(self.logs.add_print)
         vsplit.addWidget(self.logs)
         vsplit.setSizes([640, 220])
 
@@ -626,6 +631,7 @@ class MainWindow(QtWidgets.QMainWindow):
 
     # ---- shutdown ----------------------------------------------------------
     def closeEvent(self, event):
+        self.camera_panel.shutdown()
         self._save_gui_state()
         if self.worker is not None:
             self.worker.request_stop()
