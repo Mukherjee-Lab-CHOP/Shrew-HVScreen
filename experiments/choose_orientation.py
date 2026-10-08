@@ -184,7 +184,6 @@ class CueExperiment(Experiment):
     def _end_trial(self, choice):
         # Clear the screen (deferred behind any active choice overlay) and
         # enter the ITI. Gate stays open until the ITI ends.
-        self.completed_trials += 1
         self.display_black()
         self.goto(STATE_ITI, f"STATE = ITI ({self.ITI_MS} ms)")
 
@@ -198,6 +197,7 @@ class CueExperiment(Experiment):
 
     def _end_iti(self):
         self.hw.motor.close()
+        self.completed_trials += 1
         self.goto(STATE_WAIT_CENTER, WAIT_CENTER_MSG)
 
     # ---- run control -------------------------------------------------------
