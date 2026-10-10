@@ -171,7 +171,8 @@ class SerialLink:
     def send(self, line):
         # Every command is framed with a leading '$' (start marker) and a
         # trailing newline (terminator), so the firmware can reliably pick
-        # commands out of the serial stream.
+        # commands out of the serial stream. Returns whether the command was
+        # written to the serial port (not whether the firmware acted on it).
         if self.on_send is not None:
             try:
                 self.on_send(line)
@@ -179,11 +180,13 @@ class SerialLink:
                 pass
         if self._ser is None:
             self._log(f"(detached) -> ${line}")
-            return
+            return False
         try:
             self._ser.write(("$" + line + "\n").encode())
         except Exception as e:
             self._log(f"write failed ({line!r}): {e}")
+            return False
+        return True
 
     def _read_loop(self):
         buf = b""
