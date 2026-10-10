@@ -201,9 +201,14 @@ class Experiment:
     def open_gate(self):
         """Open the choice gate (after the centre-initiation hold)."""
         try:
-            self.hw.motor.open()
-        except Exception:
-            pass
+            sent = self.hw.motor.open()
+        except Exception as exc:
+            self.log(f"ERROR: failed to send gate-open command: {exc}")
+            raise
+        if sent is False:
+            self.log("Gate-open command was not sent (disconnected or serial write failed).")
+        else:
+            self.log(f"Gate-open command sent (SERVO {self.hw.motor.open_deg}).")
 
     def close_gate(self):
         """Close the choice gate (during the ITI / between trials)."""

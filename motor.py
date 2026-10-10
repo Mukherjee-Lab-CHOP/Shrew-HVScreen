@@ -22,10 +22,10 @@ class Motor:
         """Turn the servo to `angle` degrees (clamped to 0-180)."""
         angle = max(0, min(180, int(angle)))
         self.angle = angle
-        self._link.send(f"SERVO {angle}")
+        return self._link.send(f"SERVO {angle}")
 
     def open(self):
-        self.turn(self.open_deg)
+        return self.turn(self.open_deg)
 
     def close(self):
-        self.turn(self.close_deg)
+        return self.turn(self.close_deg)
