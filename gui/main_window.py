@@ -21,7 +21,7 @@ _ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 if _ROOT not in sys.path:
     sys.path.insert(0, _ROOT)
 
-from config import DEFAULT_PORT                      # noqa: E402
+from config import DEFAULT_PORT, SERVO_OPEN_DEG, SERVO_CLOSE_DEG  # noqa: E402
 from hardware import Hardware                       # noqa: E402
 
 from .bus import Bus                                # noqa: E402
@@ -201,7 +201,8 @@ class MainWindow(QtWidgets.QMainWindow):
         also shows up in the 'Commands out' log."""
         row = QtWidgets.QHBoxLayout()
         row.addWidget(QtWidgets.QLabel("Send to Arduino:"))
-        for label, cmd in (("Gate open", "SERVO 60"), ("Gate close", "SERVO 180"),
+        for label, cmd in (("Gate open", f"SERVO {SERVO_OPEN_DEG}"),
+                           ("Gate close", f"SERVO {SERVO_CLOSE_DEG}"),
                            ("Reward L", "REWARD L"), ("Reward R", "REWARD R"),
                            ("Emit on", "EMIT ON"), ("Emit off", "EMIT OFF"),
                            ("Ping", "PING")):
