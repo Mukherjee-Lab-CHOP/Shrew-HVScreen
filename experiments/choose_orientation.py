@@ -33,7 +33,8 @@ class CueExperiment(Experiment):
     TITLE = "CUE EXPERIMENT (Python controller)"
     INITIAL_STATE = STATE_WAIT_CENTER
     CONTROLS_HELP = ("c = initiate trial (CENTER)   l = choose LEFT   "
-                     "r = choose RIGHT   t = force timeout   q = quit")
+                     "r = choose RIGHT   t = force timeout   "
+                     "i = advance to ITI   q = quit")
     CSV_HEADER = [
         "trial_number",
         "init_time_stamp",
@@ -95,9 +96,8 @@ class CueExperiment(Experiment):
             elif inp["right"]:
                 self._handle_choice("RIGHT", self.right_fig)
         elif self.state == STATE_REWARD:
-            if now - self.state_start >= self.REWARD_MS:
-                self.hw.motor.close()
-                self._start_iti()
+            if "i" in keys or (now - self.state_start >= self.REWARD_MS):
+                self.advance_to_iti()
         elif self.state == STATE_ITI:
             if now - self.state_start >= self.ITI_MS:
                 self._end_iti()
@@ -215,6 +215,15 @@ class CueExperiment(Experiment):
         self.goto(STATE_WAIT_CENTER, WAIT_CENTER_MSG)
 
     # ---- run control -------------------------------------------------------
+    def advance_to_iti(self):
+        """Cut the reward collection period short, close the gate, and advance to ITI."""
+        if self.state == STATE_REWARD:
+            self.display_black()
+            self.hw.motor.close()
+            self._start_iti()
+            return True
+        return False
+
     def skip_trial(self):
         """Abort the current trial and move on. From WAIT_CHOICE it records a
         SKIP row and enters the ITI; from the ITI it cuts the ITI short and

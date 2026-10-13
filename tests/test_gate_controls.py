@@ -37,11 +37,66 @@ class GateControlsTest(unittest.TestCase):
             }
             buttons["Gate open"].click()
             buttons["Gate close"].click()
+            buttons["Advance to ITI"].click()
 
-            self.assertEqual(commands, ["SERVO 60", "SERVO 180"])
+            self.assertEqual(commands, ["SERVO 60", "SERVO 180", "SERVO 180"])
         finally:
             panel.close()
             panel.deleteLater()
+
+    def test_gui_advance_to_iti_triggers_servo_and_bus_control(self):
+        raw_cmds = []
+        controls_pushed = []
+        logs = []
+        window = SimpleNamespace(
+            _send_raw=raw_cmds.append,
+            _running=lambda: True,
+            bus=SimpleNamespace(push_control=controls_pushed.append),
+            logs=SimpleNamespace(add_print=logs.append),
+        )
+
+        MainWindow._advance_to_iti(window)
+
+        self.assertEqual(raw_cmds, ["SERVO 180"])
+        self.assertEqual(controls_pushed, [{"type": "advance_to_iti"}])
+        self.assertIn("[control] advance to ITI", logs)
+
+        raw_cmds.clear()
+        controls_pushed.clear()
+        logs.clear()
+        window._running = lambda: False
+
+        MainWindow._advance_to_iti(window)
+
+        self.assertEqual(raw_cmds, ["SERVO 180"])
+        self.assertEqual(controls_pushed, [])
+        self.assertTrue(any("no experiment running" in msg for msg in logs))
+
+    def test_experiment_advance_to_iti_transitions_from_reward_to_iti(self):
+        from experiments.consecutive_reward import ConsecutiveReward
+
+        motor_cmds = []
+        display_calls = []
+        exp = ConsecutiveReward.__new__(ConsecutiveReward)
+        exp.state = exp.REWARD_STATE
+        exp._pending_iti_ms = 2500
+        exp.hw = SimpleNamespace(motor=SimpleNamespace(close=lambda: motor_cmds.append("CLOSE")))
+        exp.display = SimpleNamespace(black=lambda: display_calls.append("BLACK"))
+        exp.clock = lambda: 100
+        exp._apply_ambient = lambda state: None
+        exp.log = lambda msg: None
+
+        advanced = exp.advance_to_iti()
+
+        self.assertTrue(advanced)
+        self.assertEqual(exp.state, exp.ITI_STATE)
+        self.assertEqual(display_calls, ["BLACK"])
+        self.assertEqual(motor_cmds, ["CLOSE"])
+
+        # When not in REWARD state, advance_to_iti should return False and not re-enter ITI
+        advanced_again = exp.advance_to_iti()
+        self.assertFalse(advanced_again)
+        self.assertEqual(exp.state, exp.ITI_STATE)
 
 
 if __name__ == "__main__":

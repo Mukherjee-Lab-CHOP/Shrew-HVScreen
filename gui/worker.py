@@ -218,6 +218,16 @@ class PipelineWorker(QtCore.QThread):
                     self._bus.push_print(f"[control] skip failed: {e!r}")
             else:
                 self._bus.push_print("[control] this experiment can't skip trials")
+        elif kind == "advance_to_iti":
+            fn = getattr(exp, "advance_to_iti", None)
+            if callable(fn):
+                try:
+                    if not fn():
+                        self._bus.push_print("[control] advance to ITI ignored (not in REWARD state)")
+                except Exception as e:
+                    self._bus.push_print(f"[control] advance to ITI failed: {e!r}")
+            else:
+                self._bus.push_print("[control] this experiment can't advance to ITI")
         elif kind == "skip_stage":
             self._skip_stage.set()
         elif kind == "skip_loop":
