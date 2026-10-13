@@ -203,11 +203,19 @@ class MainWindow(QtWidgets.QMainWindow):
         row.addWidget(QtWidgets.QLabel("Send to Arduino:"))
         for label, cmd in (("Gate open", f"SERVO {SERVO_OPEN_DEG}"),
                            ("Gate close", f"SERVO {SERVO_CLOSE_DEG}"),
+                           ("Advance to ITI", None),
                            ("Reward L", "REWARD L"), ("Reward R", "REWARD R"),
                            ("Emit on", "EMIT ON"), ("Emit off", "EMIT OFF"),
                            ("Ping", "PING")):
             b = QtWidgets.QPushButton(label)
-            b.clicked.connect(lambda _checked=False, c=cmd: self._send_raw(c))
+            if cmd is None:
+                b.setToolTip("Close the gate and advance the running experiment to the ITI phase")
+                b.clicked.connect(lambda _checked=False: (
+                    self._advance_to_iti() if hasattr(self, "_advance_to_iti")
+                    else self._send_raw(f"SERVO {SERVO_CLOSE_DEG}")
+                ))
+            else:
+                b.clicked.connect(lambda _checked=False, c=cmd: self._send_raw(c))
             row.addWidget(b)
 
         self.cmd_edit = QtWidgets.QLineEdit()
@@ -497,6 +505,15 @@ class MainWindow(QtWidgets.QMainWindow):
 
     def _running(self):
         return self.worker is not None and self.worker.isRunning()
+
+    def _advance_to_iti(self):
+        """Close the choice gate and, if an experiment is running, advance it to ITI."""
+        self._send_raw(f"SERVO {SERVO_CLOSE_DEG}")
+        if self._running():
+            self.bus.push_control({"type": "advance_to_iti"})
+            self.logs.add_print("[control] advance to ITI")
+        else:
+            self.logs.add_print(f"[control] gate close (SERVO {SERVO_CLOSE_DEG}) — no experiment running")
 
     def _skip_trial(self):
         """Abort the rest of the current trial and advance to the next one."""

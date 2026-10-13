@@ -49,7 +49,7 @@ class Experiment:
     INITIAL_STATE = None
     INITIAL_STATE_MSG = WAIT_CENTER_MSG
     CONTROLS_HELP = ("c = start (CENTER)   l = LEFT   r = RIGHT   "
-                     "t = timeout   q = quit")
+                     "t = timeout   i = advance to ITI   q = quit")
     BLANK_ON_START = False
     # Poke recognition: how long a beam must stay broken to count as a poke. The
     # centre/initiation port and the side/reward ports have independent windows.
@@ -242,6 +242,15 @@ class Experiment:
             self.close_gate()
             self.goto(self.ITI_STATE, f"STATE = ITI ({self._pending_iti_ms} ms)")
 
+    def advance_to_iti(self):
+        """Cut the reward collection period short, close the gate, and advance to ITI."""
+        if self.state == self.REWARD_STATE:
+            self.display_black()
+            self.close_gate()
+            self.goto(self.ITI_STATE, f"STATE = ITI ({self._pending_iti_ms} ms)")
+            return True
+        return False
+
     # ---- main loop ---------------------------------------------------------
     def step(self, keys):
         """Advance the state machine one tick. Returns "QUIT" or None."""
@@ -250,11 +259,9 @@ class Experiment:
         self.ingest_ir()
         if self.state == self.REWARD_STATE:
             # reward-collection window: gate stays open until REWARD_MS elapses,
-            # then close the gate and begin the (correctness-dependent) ITI.
-            if self.clock() - self.state_start >= self.REWARD_MS:
-                self.display_black()
-                self.close_gate()
-                self.goto(self.ITI_STATE, f"STATE = ITI ({self._pending_iti_ms} ms)")
+            # or manual advance/key, then close the gate and begin ITI.
+            if "i" in keys or (self.clock() - self.state_start >= self.REWARD_MS):
+                self.advance_to_iti()
             return None
         if self.state == self.ITI_STATE:
             if self.clock() - self.state_start >= self._pending_iti_ms:

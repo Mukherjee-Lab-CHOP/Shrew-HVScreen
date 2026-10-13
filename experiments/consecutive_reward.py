@@ -30,7 +30,7 @@ class ConsecutiveReward(Experiment):
     INITIAL_STATE = STATE_WAIT_CENTER
     BLANK_ON_START = True
     CONTROLS_HELP = ("c = start trial (CENTER)   l = poke LEFT   "
-                     "r = poke RIGHT   q = quit")
+                     "r = poke RIGHT   i = advance to ITI   q = quit")
     CSV_HEADER = [
         "trial_number", "timestamp_ms", "chosen_side",
         "consecutive_count", "max_consecutive", "reward",
