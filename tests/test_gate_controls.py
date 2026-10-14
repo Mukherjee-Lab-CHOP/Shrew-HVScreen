@@ -73,22 +73,22 @@ class GateControlsTest(unittest.TestCase):
         self.assertEqual(controls_pushed, [])
         self.assertTrue(any("no experiment running" in msg for msg in logs))
 
-    def test_reward_wait_timeout_button_calls_control_handler(self):
+    def test_manual_timeout_button_uses_existing_key_without_duplicate_button(self):
         controls = SimpleNamespace(**{
             name: Mock() for name in (
-                "_start_run", "_stop_run", "_manual_key", "_timeout_reward_wait",
+                "_start_run", "_stop_run", "_manual_key",
                 "_skip_trial", "_skip_stage", "_skip_loop", "_set_trial_number",
             )
         })
         panel = QtWidgets.QWidget()
         panel.setLayout(MainWindow._build_controls(controls))
         try:
-            button = next(
-                button for button in panel.findChildren(QtWidgets.QPushButton)
-                if button.text() == "Timeout reward-port wait"
-            )
-            button.click()
-            controls._timeout_reward_wait.assert_called_once()
+            buttons = {
+                button.text(): button for button in panel.findChildren(QtWidgets.QPushButton)
+            }
+            self.assertNotIn("Timeout reward-port wait", buttons)
+            buttons["Timeout (t)"].click()
+            controls._manual_key.assert_called_once_with("t", "Timeout (t)")
         finally:
             panel.close()
             panel.deleteLater()
