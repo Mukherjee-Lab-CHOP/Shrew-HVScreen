@@ -1,5 +1,6 @@
 import unittest
 from types import SimpleNamespace
+from unittest.mock import Mock
 
 from PySide6 import QtWidgets
 
@@ -71,6 +72,26 @@ class GateControlsTest(unittest.TestCase):
         self.assertEqual(raw_cmds, ["SERVO 180"])
         self.assertEqual(controls_pushed, [])
         self.assertTrue(any("no experiment running" in msg for msg in logs))
+
+    def test_reward_wait_timeout_button_calls_control_handler(self):
+        controls = SimpleNamespace(**{
+            name: Mock() for name in (
+                "_start_run", "_stop_run", "_manual_key", "_timeout_reward_wait",
+                "_skip_trial", "_skip_stage", "_skip_loop", "_set_trial_number",
+            )
+        })
+        panel = QtWidgets.QWidget()
+        panel.setLayout(MainWindow._build_controls(controls))
+        try:
+            button = next(
+                button for button in panel.findChildren(QtWidgets.QPushButton)
+                if button.text() == "Timeout reward-port wait"
+            )
+            button.click()
+            controls._timeout_reward_wait.assert_called_once()
+        finally:
+            panel.close()
+            panel.deleteLater()
 
     def test_experiment_advance_to_iti_transitions_from_reward_to_iti(self):
         from experiments.consecutive_reward import ConsecutiveReward
