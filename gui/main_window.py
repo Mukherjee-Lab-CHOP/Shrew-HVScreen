@@ -171,11 +171,6 @@ class MainWindow(QtWidgets.QMainWindow):
             row.addWidget(b)
 
         row.addSpacing(20)
-        self.timeout_reward_wait_btn = QtWidgets.QPushButton("Timeout reward-port wait")
-        self.timeout_reward_wait_btn.setToolTip(
-            "Consecutive reward: close the gate and enter no-reward ITI from WAIT_POKE")
-        self.timeout_reward_wait_btn.clicked.connect(self._timeout_reward_wait)
-        row.addWidget(self.timeout_reward_wait_btn)
         self.skip_btn = QtWidgets.QPushButton("Skip trial ⏭")
         self.skip_btn.clicked.connect(self._skip_trial)
         row.addWidget(self.skip_btn)
@@ -527,13 +522,6 @@ class MainWindow(QtWidgets.QMainWindow):
             self.logs.add_print("[control] skip trial")
         else:
             self.logs.add_print("[control] skip trial — ignored (press Start first)")
-
-    def _timeout_reward_wait(self):
-        if self._running():
-            self.bus.push_control({"type": "timeout_reward_wait"})
-            self.logs.add_print("[control] timeout reward-port wait")
-        else:
-            self.logs.add_print("[control] timeout reward-port wait - ignored (press Start first)")
 
     def _skip_stage(self):
         """Abort the rest of the current experiment/stage and advance to the next."""

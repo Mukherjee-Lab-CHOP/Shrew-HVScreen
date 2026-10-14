@@ -1,6 +1,6 @@
 - Add close door after 1 minute of accepting reward.
 - Add 'enter-iti button'. (done)
-- Make sure it reads nose-poke time in the reward port only once.
+- Make sure it reads nose-poke time in the reward port only once (It's actually fine).
 - Can you close the door a little bit more. (Yes, the range is 0-180 instead of 60 (open)-180 (close))
 - Can we change the speed of gate open and close so that it does not scare the animal (later)?
 - GUI for experments/consecutive_reward.py is confusing, Gui button for each stage of the experiment so that it's easier to train (later).

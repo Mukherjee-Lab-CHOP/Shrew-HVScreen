@@ -133,9 +133,10 @@ existing **ITI after incorrect** runs before returning to the center-hold state.
 The timeout counts as a completed trial without changing the same-side streak.
 At the deadline, timeout takes precedence over a simultaneous poke.
 
-The **Timeout reward-port wait** GUI button or **t** key ends this wait immediately,
-even when the configured window is unlimited. The button is ignored (with a log
-message) outside `consecutive_reward`'s `WAIT_POKE` state or when no run is active.
+The existing **Timeout (t)** button in the **Manual** controls or the **t** key
+ends this wait immediately, even when the configured window is unlimited.
+In `consecutive_reward`, timeout applies only in `WAIT_POKE`.
+**Skip trial** instead returns directly to center-hold waiting without an ITI.
 The separate post-reward collection window (`REWARD_MS`, default 3000 ms) is unchanged.
 
 ### Adding another experiment

@@ -228,14 +228,6 @@ class PipelineWorker(QtCore.QThread):
                     self._bus.push_print(f"[control] advance to ITI failed: {e!r}")
             else:
                 self._bus.push_print("[control] this experiment can't advance to ITI")
-        elif kind == "timeout_reward_wait":
-            fn = getattr(exp, "timeout_reward_wait", None)
-            if callable(fn):
-                if not fn():
-                    self._bus.push_print(
-                        "[control] reward-port timeout ignored (not in WAIT_POKE state)")
-            else:
-                self._bus.push_print("[control] this experiment has no reward-port wait timeout")
         elif kind == "skip_stage":
             self._skip_stage.set()
         elif kind == "skip_loop":

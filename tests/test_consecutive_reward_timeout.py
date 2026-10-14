@@ -13,8 +13,6 @@ from experiments.consecutive_reward import (
     STATE_WAIT_CENTER,
     STATE_WAIT_POKE,
 )
-from gui.main_window import MainWindow
-from gui.worker import PipelineWorker
 
 
 class ConsecutiveRewardTimeoutTest(unittest.TestCase):
@@ -100,33 +98,15 @@ class ConsecutiveRewardTimeoutTest(unittest.TestCase):
         hardware.motor.close.assert_called_once()
         hardware.reward.deliver.assert_not_called()
 
-    def test_button_control_routes_to_experiment_and_rejects_other_states(self):
+    def test_timeout_rejects_other_states(self):
         exp, hardware = self.make_experiment()
-        worker = SimpleNamespace(_bus=SimpleNamespace(push_print=Mock()))
-        PipelineWorker._apply_control(worker, exp, {"type": "timeout_reward_wait"})
+        self.assertTrue(exp.timeout_reward_wait())
         self.assertEqual(exp.state, STATE_ITI)
-        PipelineWorker._apply_control(worker, exp, {"type": "timeout_reward_wait"})
+        self.assertFalse(exp.timeout_reward_wait())
         hardware.motor.close.assert_called_once()
-        self.assertIn("ignored", worker._bus.push_print.call_args.args[0])
         for state in (STATE_WAIT_CENTER, STATE_REWARD):
             exp.state = state
             self.assertFalse(exp.timeout_reward_wait())
-        PipelineWorker._apply_control(worker, SimpleNamespace(), {"type": "timeout_reward_wait"})
-        self.assertIn("no reward-port wait timeout", worker._bus.push_print.call_args.args[0])
-
-    def test_gui_timeout_queues_control_only_while_running(self):
-        window = SimpleNamespace(
-            _running=Mock(return_value=True),
-            bus=SimpleNamespace(push_control=Mock()),
-            logs=SimpleNamespace(add_print=Mock()),
-        )
-        MainWindow._timeout_reward_wait(window)
-        window.bus.push_control.assert_called_once_with({"type": "timeout_reward_wait"})
-        window._running.return_value = False
-        window.bus.push_control.reset_mock()
-        MainWindow._timeout_reward_wait(window)
-        window.bus.push_control.assert_not_called()
-        self.assertIn("ignored", window.logs.add_print.call_args.args[0])
 
 
 if __name__ == "__main__":
