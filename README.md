@@ -120,6 +120,24 @@ python run.py --no-display                   # logic + hardware, no screen
 Each exposes a `SPEC` (variables + state graph) so the GUI can build its editors
 and node graph automatically.
 
+### Consecutive reward: reward-port response window
+
+After a successful center hold, the gate opens and waits for a left/right poke.
+**Reward-port wait (ms, 0 = unlimited)** (`CHOICE_TIMEOUT_MS`) defaults to **0**,
+preserving unlimited waiting. Set it to a positive duration (for example, 30000
+for 30 seconds) before adding/updating the pipeline stage to limit this wait.
+The window starts when the center hold is accepted, not when the reward is paid.
+
+On timeout, the gate closes, a `TIMEOUT` / `NO REWARD` CSV row is written, and the
+existing **ITI after incorrect** runs before returning to the center-hold state.
+The timeout counts as a completed trial without changing the same-side streak.
+At the deadline, timeout takes precedence over a simultaneous poke.
+
+The **Timeout reward-port wait** GUI button or **t** key ends this wait immediately,
+even when the configured window is unlimited. The button is ignored (with a log
+message) outside `consecutive_reward`'s `WAIT_POKE` state or when no run is active.
+The separate post-reward collection window (`REWARD_MS`, default 3000 ms) is unchanged.
+
 ### Adding another experiment
 
 Create a new module in `experiments/`, e.g. `experiments/my_task.py`, defining a

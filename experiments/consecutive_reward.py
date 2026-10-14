@@ -3,7 +3,8 @@
 Each trial is initiated by a CENTER hold; the shrew then pokes LEFT or RIGHT and
 gets a reward, EXCEPT it may not go to the same side more than MAX_CONSECUTIVE
 times in a row: once it exceeds the limit on a side, that side stops paying out
-until it switches to the other side (which resets the streak).
+until it switches to the other side (which resets the streak). CHOICE_TIMEOUT_MS
+limits the wait after center initiation; 0 keeps the wait unlimited.
 
 State machine:  WAIT_CENTER_HOLD --center--> WAIT_POKE --poke L/R--> ITI
                 --elapsed--> WAIT_CENTER_HOLD
@@ -21,6 +22,7 @@ DEFAULT_MAX_CONSECUTIVE = 3
 DEFAULT_INIT_POKE_MS = 100
 DEFAULT_REWARD_POKE_MS = 100
 DEFAULT_REWARD_MS = 3000
+DEFAULT_CHOICE_TIMEOUT_MS = 0
 DEFAULT_CORRECT_ITI_WAIT = 2000
 DEFAULT_INCORRECT_ITI_WAIT = 10000
 
@@ -30,7 +32,8 @@ class ConsecutiveReward(Experiment):
     INITIAL_STATE = STATE_WAIT_CENTER
     BLANK_ON_START = True
     CONTROLS_HELP = ("c = start trial (CENTER)   l = poke LEFT   "
-                     "r = poke RIGHT   i = advance to ITI   q = quit")
+                     "r = poke RIGHT   t = timeout reward-port wait   "
+                     "i = advance to ITI   q = quit")
     CSV_HEADER = [
         "trial_number", "timestamp_ms", "chosen_side",
         "consecutive_count", "max_consecutive", "reward",
@@ -41,6 +44,9 @@ class ConsecutiveReward(Experiment):
         self.INIT_POKE_MS = self.param("INIT_POKE_MS", DEFAULT_INIT_POKE_MS, int)
         self.REWARD_POKE_MS = self.param("REWARD_POKE_MS", DEFAULT_REWARD_POKE_MS, int)
         self.REWARD_MS = self.param("REWARD_MS", DEFAULT_REWARD_MS, int)
+        self.CHOICE_TIMEOUT_MS = self.param("CHOICE_TIMEOUT_MS", DEFAULT_CHOICE_TIMEOUT_MS, int)
+        if self.CHOICE_TIMEOUT_MS < 0:
+            raise ValueError("CHOICE_TIMEOUT_MS must be non-negative (0 = unlimited)")
         self.CORRECT_ITI_WAIT = self.param("CORRECT_ITI_WAIT", DEFAULT_CORRECT_ITI_WAIT, int)
         self.INCORRECT_ITI_WAIT = self.param("INCORRECT_ITI_WAIT", DEFAULT_INCORRECT_ITI_WAIT, int)
         self.last_side = None
@@ -58,7 +64,10 @@ class ConsecutiveReward(Experiment):
                 self.open_gate()        # centre initiation -> open gate (SERVO 60)
                 self.goto(STATE_WAIT_POKE, "STATE = WAIT_POKE (poke LEFT or RIGHT)")
         elif self.state == STATE_WAIT_POKE:
-            if inp["left"]:
+            if ("t" in keys or (self.CHOICE_TIMEOUT_MS > 0
+                    and self.clock() - self.state_start >= self.CHOICE_TIMEOUT_MS)):
+                self.timeout_reward_wait()
+            elif inp["left"]:
                 self._poke("LEFT")
             elif inp["right"]:
                 self._poke("RIGHT")
@@ -91,6 +100,17 @@ class ConsecutiveReward(Experiment):
         self.end_trial(correct=allowed, rewarded=allowed)
 
     # ---- run control -------------------------------------------------------
+    def timeout_reward_wait(self):
+        """End an unanswered reward-port wait, leaving the side streak unchanged."""
+        if self.state != STATE_WAIT_POKE:
+            return False
+        self.trial_num += 1
+        self.log(f"TRIAL {self.trial_num} TIMEOUT - no reward-port response.")
+        self.write_row([self.trial_num, self.clock(), "TIMEOUT",
+                        self.consecutive, self.MAX_CONSECUTIVE, "NO REWARD"])
+        self.end_trial(correct=False, rewarded=False)
+        return True
+
     def skip_trial(self):
         """Count a skipped trial and begin anew, from ANY state (no reward, streak
         untouched). Returns to WAIT_CENTER ready for the next poke."""
@@ -113,6 +133,8 @@ SPEC = {
          "default": DEFAULT_INIT_POKE_MS, "min": 0, "max": 10000, "step": 50},
         {"key": "REWARD_POKE_MS", "label": "Reward poke time (ms)", "type": "int",
          "default": DEFAULT_REWARD_POKE_MS, "min": 0, "max": 10000, "step": 50},
+        {"key": "CHOICE_TIMEOUT_MS", "label": "Reward-port wait (ms, 0 = unlimited)", "type": "int",
+         "default": DEFAULT_CHOICE_TIMEOUT_MS, "min": 0, "max": 600000, "step": 1000},
         {"key": "REWARD_MS", "label": "Reward phase (ms, gate open)", "type": "int",
          "default": DEFAULT_REWARD_MS, "min": 0, "max": 60000, "step": 250},
         {"key": "CORRECT_ITI_WAIT", "label": "ITI after correct (ms)", "type": "int",
@@ -130,7 +152,7 @@ SPEC = {
     "transitions": [
         {"from": STATE_WAIT_CENTER, "to": STATE_WAIT_POKE,   "label": "center held / 'c'"},
         {"from": STATE_WAIT_POKE,   "to": STATE_REWARD,      "label": "rewarded poke"},
-        {"from": STATE_WAIT_POKE,   "to": STATE_ITI,         "label": "no-reward poke"},
+        {"from": STATE_WAIT_POKE,   "to": STATE_ITI,         "label": "no-reward poke / timeout"},
         {"from": STATE_REWARD,      "to": STATE_ITI,         "label": "reward phase done"},
         {"from": STATE_ITI,         "to": STATE_WAIT_CENTER, "label": "ITI elapsed"},
     ],
