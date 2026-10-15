@@ -26,7 +26,7 @@
     $PING           -> replies "PONG"
     $REWARD L       -> pulse LEFT pump for REWARD_MS
     $REWARD R       -> pulse RIGHT pump for REWARD_MS
-    $SERVO <angle>  -> turn the gate servo to <angle> deg (0..180)
+    $SERVO <angle>  -> ramp the gate servo toward <angle> deg (0..180)
     $EMIT ON        -> IR emitters ON
     $EMIT OFF       -> IR emitters OFF
     $TONE <hz> <ms> -> STUBBED (logs only; no buzzer wired yet)
@@ -44,6 +44,7 @@
 ******************************************************************************/
 
 #include <Servo.h>
+#include "gate_motion.h"
 
 // LEFT and RIGHT are swapped here in firmware (the inner-left/right IR pairs and
 // the reward pumps trade pins) so the rig's physical sides match the screen,
@@ -77,6 +78,9 @@ Servo gateServo;
 const bool BROKEN_IS_LOW = false;            // matches original cue.ino
 const unsigned long DEBOUNCE_MS = 30;        // edge-report debounce
 const unsigned long REWARD_MS   = 100;       // reward pump pulse width
+const unsigned long SERVO_STEP_MS = 25;      // 1 deg per step; 120 deg in ~3 s
+static_assert(SERVO_STEP_MS > 0, "SERVO_STEP_MS must be positive");
+GateMotion gateMotion(SERVO_CLOSE_DEG, SERVO_STEP_MS);
 
 /******************** IR CHANNEL TABLE ****************************************/
 struct Channel {
@@ -124,13 +128,19 @@ void rewardRight() {
   Serial.print(millis()); Serial.println(F("  REWARD RIGHT OFF"));
 }
 
-// Turn the gate servo to an absolute angle (clamped to 0..180).
+// Acknowledge the target immediately; motion advances in loop().
 void servoTo(int deg) {
   if (deg < 0)   deg = 0;
   if (deg > 180) deg = 180;
-  gateServo.write(deg);
+  gateMotion.setTarget(deg, millis());
   Serial.print(millis()); Serial.print(F("  SERVO -> "));
   Serial.print(deg); Serial.println(F(" deg"));
+}
+
+void updateServo() {
+  if (gateMotion.update(millis())) {
+    gateServo.write(gateMotion.angle());
+  }
 }
 
 // STUB: real buzzer not wired yet. Logs the request so the Python side can be
@@ -150,6 +160,8 @@ void printBanner() {
   Serial.println(F("################################################################"));
   Serial.print  (F("  BROKEN_IS_LOW = "));
   Serial.println(BROKEN_IS_LOW ? F("true") : F("false"));
+  Serial.print  (F("  SERVO_STEP_MS = "));
+  Serial.println(SERVO_STEP_MS);
   Serial.println(F("  Commands ($-prefixed): $PING | $REWARD L|R | $SERVO <angle>"));
   Serial.println(F("            | $EMIT ON|OFF | $TONE <hz> <ms> | $?"));
   Serial.println(F("  Emits:    IR <CHANNEL> BROKEN|CLEAR <millis>"));
@@ -252,7 +264,7 @@ void setup() {
   pinMode(REWARD_R, OUTPUT); digitalWrite(REWARD_R, LOW);
 
   gateServo.attach(SERVO_PIN);
-  gateServo.write(SERVO_CLOSE_DEG);
+  gateServo.write(gateMotion.angle());
 
   setEmitters(true);
 
@@ -285,5 +297,6 @@ void loop() {
     // else: byte outside a command -> ignore
   }
 
+  updateServo();
   delay(2);
 }

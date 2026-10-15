@@ -35,3 +35,10 @@ Each script auto-detects the Arduino, pings it, and prints `link OK` or warns
 that the board isn't responding (firmware not flashed / wrong port / port held
 open). `test_ir.py` flags any beam it never saw break — useful for catching a
 misaligned or miswired sensor.
+
+The motor test waits 5 seconds after each target so the firmware's default
+25 ms/degree ramp can finish, including a full 180-degree movement (4.5 seconds).
+If you increase `SERVO_STEP_MS` in the firmware, increase `settle_s` in
+`test_motor.py` accordingly. Test on an empty rig: the sweep includes angles
+outside the usual 60-to-180-degree operating range. Boot still commands the
+closed angle directly and is not speed-limited.
