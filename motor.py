@@ -1,6 +1,7 @@
 """Motor — a servo motor on the Arduino (the choice gate).
 
-Commands the firmware to turn the servo to an absolute angle.
+Commands the firmware to ramp the servo toward an absolute angle.
+Calls return after sending the target, not after physical motion finishes.
 
     motor = Motor(link)
     motor.turn(90)     # go to 90 degrees
@@ -19,7 +20,7 @@ class Motor:
         self.angle = None          # last commanded angle (None until first turn)
 
     def turn(self, angle):
-        """Turn the servo to `angle` degrees (clamped to 0-180)."""
+        """Send a target angle (clamped to 0-180); firmware ramps asynchronously."""
         angle = max(0, min(180, int(angle)))
         self.angle = angle
         return self._link.send(f"SERVO {angle}")

@@ -210,6 +210,45 @@ ignored. Case-insensitive:
 Events **out**: `READY`, `IR <INNER_LEFT|CENTER|INNER_RIGHT> <BROKEN|CLEAR> <millis>`,
 plus human-readable ACK lines. Wiring is unchanged from `cue.ino`.
 
+### Gate movement speed
+
+Upload the updated [firmware](firmware/firmware.ino) to enable slower gate
+movement. Every `SERVO <angle>` command, including GUI buttons and experiment
+commands, moves one degree at a time without adding blocking delays to IR
+polling or command handling.
+
+`SERVO_STEP_MS` in the firmware defaults to **25 ms per degree**: the normal
+60-to-180-degree movement takes approximately **3 seconds in either direction**.
+Increase it to slow the gate further (for example, 40 gives about 4.8 seconds),
+or decrease it to speed up. It must be positive. Recompile and upload after
+changing it; the firmware banner reports the active value. The angles in
+`config.py` change the endpoints, not the speed.
+
+Commands and their ACKs still return immediately and acknowledge only the
+target, not arrival. Experiment timers are unchanged and start on the command,
+not on completion of the movement; account for travel time when setting trial
+windows. A new target replaces the previous target from the last commanded
+intermediate angle; repeating the same target does not restart the step timer.
+Existing reward-pump pulses can pause stepping for 100 ms; the ramp never
+catches up with a sudden multi-degree jump.
+
+At boot the servo is still commanded directly to the closed angle because its
+physical starting position is unknown. This initial movement is **not** slowed.
+There is no position feedback or obstruction detection. Verify the movement on
+an empty rig before use. Run `python hardware_test/test_motor.py` for a bench
+check; its waits allow for the default ramp speed.
+
+The motion scheduler has hardware-independent C++11 regression tests. With a
+C++ compiler available, run these from the repository root (PowerShell example):
+
+```powershell
+g++ -std=c++11 -Wall -Wextra -Werror -Ifirmware tests\firmware\test_gate_motion.cpp -o "$env:TEMP\gate_motion_tests.exe"
+if ($LASTEXITCODE -eq 0) { & "$env:TEMP\gate_motion_tests.exe" }
+```
+
+They check three-second travel in both directions, retargeting, repeated targets,
+clamping, delayed updates, clock rollover, and a slower configured interval.
+
 > **Tone is stubbed.** `TONE` is parsed and logged but drives no hardware yet.
 > When a buzzer is wired to `BUZZER_PIN` (pin 9), enable the `tone()` line in
 > `toneStub()`.
