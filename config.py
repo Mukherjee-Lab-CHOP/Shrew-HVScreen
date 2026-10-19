@@ -45,7 +45,7 @@ P_STIM_VERTICAL   = 0.2
 
 # ---- Gate servo (Motor) ----------------------------------------------------
 # Movement speed is set by SERVO_STEP_MS in firmware/firmware.ino (reflash to change).
-SERVO_OPEN_DEG  = 60    # angle that opens the choice gate
+SERVO_OPEN_DEG  = 0    # angle that opens the choice gate
 SERVO_CLOSE_DEG = 180   # angle that closes it
 
 # ---- Display ---------------------------------------------------------------

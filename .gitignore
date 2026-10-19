@@ -3,3 +3,4 @@ __pycache__
 venv
 data/
 .shrew_gui_state.json
+.vscode/c_cpp_properties.json
