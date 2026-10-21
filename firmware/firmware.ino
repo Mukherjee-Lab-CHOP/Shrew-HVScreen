@@ -78,7 +78,7 @@ Servo gateServo;
 const bool BROKEN_IS_LOW = false;            // matches original cue.ino
 const unsigned long DEBOUNCE_MS = 30;        // edge-report debounce
 const unsigned long REWARD_MS   = 100;       // reward pump pulse width
-const unsigned long SERVO_STEP_MS = 25;      // 1 deg per step; 120 deg in ~3 s
+const unsigned long SERVO_STEP_MS = 15;      // manipulate deg per step;
 static_assert(SERVO_STEP_MS > 0, "SERVO_STEP_MS must be positive");
 GateMotion gateMotion(SERVO_CLOSE_DEG, SERVO_STEP_MS);
 
