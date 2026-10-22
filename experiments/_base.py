@@ -133,12 +133,15 @@ class Experiment:
         self._csv_file.flush()
 
     def close(self):
-        if self.ambient is not None:
-            self.ambient.close()
         try:
-            self._csv_file.close()
-        except Exception:
-            pass
+            if self.ambient is not None:
+                self.ambient.close()
+        finally:
+            try:
+                self._csv_file.flush()
+                os.fsync(self._csv_file.fileno())
+            finally:
+                self._csv_file.close()
 
     # ---- ambient sound -----------------------------------------------------
     def _apply_ambient(self, state):
