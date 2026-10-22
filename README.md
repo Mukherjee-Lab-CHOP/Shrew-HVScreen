@@ -57,13 +57,17 @@ A PySide6 control panel that wires the whole system together:
 - **Top** — pick/scan the **COM port** (likely Arduinos are flagged), connect,
   choose the **stimulus monitor**, and Start/Stop the run with manual
   `c`/`l`/`r`/`t` controls.
-- **Left** — build a **pipeline** of stages: *run experiment X for N trials with
-  these variable overrides, then switch to the next stage.*
-- **Right** — pick an experiment, edit its **variables**, and see its
-  **state-machine node graph** (drag nodes; the live current state highlights
-  during a run). "Add as pipeline stage →" pushes the current setup left.
-- **Middle** — the **live CSV** being written and a **mirror** of the secondary
-  (stimulus) screen, plus an optional **live camera preview**.
+- **Left** — pick an experiment and edit its **variables** in a narrow control
+  column. A compact **Stages & loops** pipeline sits below the stage
+  editor: *run experiment X for N trials with these variable overrides, then
+  switch to the next stage.* Drag the vertical dividers to expand it for larger
+  pipelines. "Add as pipeline stage →" adds the current setup to this list.
+- **Middle** — a narrow **mirror** of the secondary (stimulus) screen and an
+  optional **live camera preview**, with camera selection and preview buttons
+  on separate rows. Drag the column dividers to adjust widths.
+- **Right** — tabs for the **live CSV** being written and **Performance** plots
+  above a tall **state-machine node graph** (drag nodes; the live current state
+  highlights during a run). Drag the divider to adjust the data/graph heights.
 - **Bottom** — two logs: **commands sent out** to the Arduino, and **prints /
   events** (experiment logs + inbound firmware lines).
 

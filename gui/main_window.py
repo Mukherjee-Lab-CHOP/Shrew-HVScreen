@@ -2,9 +2,9 @@
 
 Layout:
     top     : serial bar (COM/connect, stimulus screen) + run controls
-    left    : pipeline builder
-    middle  : live CSV table + stimulus mirror + optional camera preview
-    right   : experiment selector, variable editors, state-machine node graph
+    left    : experiment/variable editor + compact pipeline
+    middle  : stimulus mirror + optional camera preview
+    right   : live CSV table/performance plots above the state-machine graph
     bottom  : commands-out log | prints/events log
 
 A ~30 ms QTimer drains the Bus (filled by the background worker) and updates the
@@ -104,24 +104,26 @@ class MainWindow(QtWidgets.QMainWindow):
         hsplit = QtWidgets.QSplitter(QtCore.Qt.Horizontal)
         vsplit.addWidget(hsplit)
 
-        # left: pipeline
+        # Pipeline signals are shared by the stage editor and run controls.
         self.pipeline = PipelinePanel(self.registry)
         self.pipeline.node_selected.connect(self._on_node_selected)
         self.pipeline.start_from_here.connect(lambda: self._start_run(from_selected=True))
-        hsplit.addWidget(self.pipeline)
 
-        # middle: CSV/performance + mirror + camera
-        mid = QtWidgets.QSplitter(QtCore.Qt.Vertical)
+        self.graph = StateGraphView()
+        self.graph.setMinimumHeight(240)
+
         self.csv_view = CsvView()
         self.performance_view = PerformanceView()
         self.csv_view.data_changed.connect(self.performance_view.set_data)
-        mid_top = QtWidgets.QWidget(); mtl = QtWidgets.QVBoxLayout(mid_top)
-        mtl.setContentsMargins(0, 0, 0, 0)
         self.data_tabs = QtWidgets.QTabWidget()
         self.data_tabs.addTab(self.csv_view, "CSV (live)")
         self.data_tabs.addTab(self.performance_view, "Performance")
-        mtl.addWidget(self.data_tabs)
-        mid.addWidget(mid_top)
+        self.data_tabs.setCurrentWidget(self.performance_view)
+        # left: experiment + variables + compact pipeline
+        hsplit.addWidget(self._build_left_panel())
+
+        # middle: narrow mirror + camera
+        mid = QtWidgets.QSplitter(QtCore.Qt.Vertical)
         mirror_box = QtWidgets.QWidget(); mbl = QtWidgets.QVBoxLayout(mirror_box)
         mbl.setContentsMargins(0, 0, 0, 0)
         mbl.addWidget(QtWidgets.QLabel("<b>Secondary screen (mirror)</b>"))
@@ -131,12 +133,15 @@ class MainWindow(QtWidgets.QMainWindow):
         mid.addWidget(mirror_box)
         self.camera_panel = CameraPanel()
         mid.addWidget(self.camera_panel)
-        mid.setSizes([180, 240, 240])
+        mid.setSizes([280, 320])
         hsplit.addWidget(mid)
 
-        # right: experiment + variables + state graph
+        # right: data tabs above a generously sized state graph
         hsplit.addWidget(self._build_right_panel())
-        hsplit.setSizes([320, 640, 460])
+        hsplit.setSizes([590, 340, 550])
+        hsplit.setStretchFactor(0, 0)
+        hsplit.setStretchFactor(1, 0)
+        hsplit.setStretchFactor(2, 1)
 
         # bottom: logs
         self.logs = LogsPanel()
@@ -232,9 +237,8 @@ class MainWindow(QtWidgets.QMainWindow):
         row.addWidget(send_btn)
         return row
 
-    def _build_right_panel(self):
-        # Vertical splitter so the state-machine area can be resized vs. the
-        # experiment/variables area.
+    def _build_left_panel(self):
+        # Keep the pipeline compact by default, but expandable for larger trees.
         split = QtWidgets.QSplitter(QtCore.Qt.Vertical)
 
         top = QtWidgets.QWidget()
@@ -305,17 +309,30 @@ class MainWindow(QtWidgets.QMainWindow):
         btn_row.addWidget(self.new_btn)
         layout.addLayout(btn_row)
         split.addWidget(top)
+        self.pipeline.tree.setMinimumHeight(44)
+        split.addWidget(self.pipeline)
 
-        bottom = QtWidgets.QWidget()
-        blay = QtWidgets.QVBoxLayout(bottom)
-        blay.addWidget(QtWidgets.QLabel("<b>State machine</b> (drag to resize / move nodes)"))
-        self.graph = StateGraphView()
-        blay.addWidget(self.graph, 1)
-        split.addWidget(bottom)
-
-        split.setSizes([360, 420])
+        split.setSizes([420, 220])
+        split.setStretchFactor(0, 1)
+        split.setStretchFactor(1, 0)
         if self.registry:
             self._on_experiment_selected(self.exp_combo.currentText())
+        return split
+
+    def _build_right_panel(self):
+        split = QtWidgets.QSplitter(QtCore.Qt.Vertical)
+        split.addWidget(self.data_tabs)
+
+        bottom = QtWidgets.QWidget()
+        layout = QtWidgets.QVBoxLayout(bottom)
+        label = QtWidgets.QLabel("<b>State machine</b> (drag to resize / move nodes)")
+        label.setWordWrap(True)
+        layout.addWidget(label)
+        layout.addWidget(self.graph, 1)
+        split.addWidget(bottom)
+        split.setSizes([280, 320])
+        split.setStretchFactor(0, 1)
+        split.setStretchFactor(1, 1)
         return split
 
     # ---- experiment selection ----------------------------------------------
@@ -328,7 +345,7 @@ class MainWindow(QtWidgets.QMainWindow):
         self.graph.load_spec(spec)
 
     def _current_stage(self):
-        """Build a stage dict from the right-panel editor's current state.
+        """Build a stage dict from the stage editor's current state.
         trials == 0 means 'run forever' (the ∞ checkbox)."""
         trials = 0 if self.infinite_chk.isChecked() else self.trials_spin.value()
         return {

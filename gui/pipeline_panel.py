@@ -1,4 +1,4 @@
-"""PipelinePanel — left side. Manage one or more named pipelines and choose which
+"""PipelinePanel — manage one or more named pipelines and choose which
 one is active.
 
 A pipeline is an ordered tree of NODES:
@@ -215,8 +215,10 @@ class PipelinePanel(QtWidgets.QWidget):
             self._mgmt_btns.append(b)
         layout.addLayout(prow)
 
-        layout.addWidget(QtWidgets.QLabel(
-            "Stages & loops (drag to reorder / nest). Click to edit on the right."))
+        hint = QtWidgets.QLabel(
+            "Stages & loops (drag to reorder / nest). Click to edit above.")
+        hint.setWordWrap(True)
+        layout.addWidget(hint)
         self.tree = _PipeTree()
         self.tree.currentItemChanged.connect(self._on_current_changed)
         self.tree.itemDoubleClicked.connect(self._on_double_clicked)
