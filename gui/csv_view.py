@@ -9,6 +9,8 @@ from PySide6 import QtCore, QtWidgets
 
 
 class CsvView(QtWidgets.QWidget):
+    data_changed = QtCore.Signal(object, object)
+
     def __init__(self, parent=None):
         super().__init__(parent)
         layout = QtWidgets.QVBoxLayout(self)
@@ -48,6 +50,7 @@ class CsvView(QtWidgets.QWidget):
         if not rows:
             self.table.setRowCount(0)
             self.table.setColumnCount(0)
+            self.data_changed.emit([], [])
             return
         header, data = rows[0], rows[1:]
         self.table.setColumnCount(len(header))
@@ -58,3 +61,4 @@ class CsvView(QtWidgets.QWidget):
                 if c < len(header):
                     self.table.setItem(r, c, QtWidgets.QTableWidgetItem(val))
         self.table.scrollToBottom()
+        self.data_changed.emit(header, data)

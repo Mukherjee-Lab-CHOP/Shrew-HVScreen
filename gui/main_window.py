@@ -31,6 +31,7 @@ from .pipeline_panel import PipelinePanel            # noqa: E402
 from .variables_panel import VariablesPanel          # noqa: E402
 from .state_graph import StateGraphView              # noqa: E402
 from .csv_view import CsvView                        # noqa: E402
+from .performance_view import PerformanceView        # noqa: E402
 from .camera_panel import CameraPanel                # noqa: E402
 from .logs_panel import LogsPanel                    # noqa: E402
 from .stimulus import StimulusScene, MirrorView, StimulusWindow   # noqa: E402
@@ -109,13 +110,17 @@ class MainWindow(QtWidgets.QMainWindow):
         self.pipeline.start_from_here.connect(lambda: self._start_run(from_selected=True))
         hsplit.addWidget(self.pipeline)
 
-        # middle: CSV + mirror + camera
+        # middle: CSV/performance + mirror + camera
         mid = QtWidgets.QSplitter(QtCore.Qt.Vertical)
         self.csv_view = CsvView()
+        self.performance_view = PerformanceView()
+        self.csv_view.data_changed.connect(self.performance_view.set_data)
         mid_top = QtWidgets.QWidget(); mtl = QtWidgets.QVBoxLayout(mid_top)
         mtl.setContentsMargins(0, 0, 0, 0)
-        mtl.addWidget(QtWidgets.QLabel("<b>CSV (live)</b>"))
-        mtl.addWidget(self.csv_view)
+        self.data_tabs = QtWidgets.QTabWidget()
+        self.data_tabs.addTab(self.csv_view, "CSV (live)")
+        self.data_tabs.addTab(self.performance_view, "Performance")
+        mtl.addWidget(self.data_tabs)
         mid.addWidget(mid_top)
         mirror_box = QtWidgets.QWidget(); mbl = QtWidgets.QVBoxLayout(mirror_box)
         mbl.setContentsMargins(0, 0, 0, 0)
@@ -653,7 +658,7 @@ class MainWindow(QtWidgets.QMainWindow):
         self._save_gui_state()
         if self.worker is not None:
             self.worker.request_stop()
-            self.worker.wait(2000)
+            self.worker.wait()
         if self.stim_window is not None:
             self.stim_window.close()
         if self.hw is not None:
