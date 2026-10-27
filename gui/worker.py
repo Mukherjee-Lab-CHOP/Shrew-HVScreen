@@ -106,6 +106,12 @@ class PipelineWorker(QtCore.QThread):
     def _run_loop(self, node):
         count = int(node.get("count", 1) or 0)      # 0 == infinite
         label = f"×{count}" if count else "(∞)"
+        if not self._has_stage(node.get("children", [])):
+            # an empty loop would spin forever without running a single trial
+            self._bus.push_print(
+                f"\n=== LOOP {label} has no stages inside it — skipped. "
+                f"Drag stages INTO the loop to repeat them. ===")
+            return
         self._bus.push_print(f"\n=== LOOP start {label} ===")
         iteration = 0
         while not self._stop.is_set():
@@ -118,6 +124,16 @@ class PipelineWorker(QtCore.QThread):
                 break
             iteration += 1
         self._bus.push_print(f"=== LOOP done ({iteration} iteration(s)) ===")
+
+    @classmethod
+    def _has_stage(cls, nodes):
+        for n in nodes:
+            if n.get("type") == "loop":
+                if cls._has_stage(n.get("children", [])):
+                    return True
+            else:
+                return True
+        return False
 
     def _check_skip(self):
         if self._skip_loop.is_set():

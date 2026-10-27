@@ -158,10 +158,18 @@ class Experiment:
         for channel, broken, _arduino_ms in self.hw.ir_detector.poll_events():
             if channel not in self._broken:
                 continue
-            if broken and not self._broken[channel]:
+            if broken:
+                if self._broken[channel]:
+                    # BROKEN while already broken => a CLEAR was lost (e.g. the
+                    # Arduino reset mid-poke, or a dropped serial line). Treat it
+                    # as a fresh break; otherwise this port stays disarmed and
+                    # ignores every future poke until the experiment restarts.
+                    self.log(f"WARNING: IR {channel} BROKEN without a CLEAR "
+                             f"(missed CLEAR?) - re-arming")
                 self._broken[channel] = True
                 self._broken_since[channel] = self.clock()
-            elif not broken and self._broken[channel]:
+                self._armed[channel] = True
+            elif self._broken[channel]:
                 self._broken[channel] = False
                 self._armed[channel] = True      # re-arm for the next break
 
