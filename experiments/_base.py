@@ -85,6 +85,7 @@ class Experiment:
         self._broken_since = {ch: 0 for ch in self.CHANNELS}
         self._armed = {ch: True for ch in self.CHANNELS}
 
+        self.on_row = None
         self._open_csv(csv_path)
 
         # ambient background sound while waiting for centre initiation
@@ -131,6 +132,8 @@ class Experiment:
     def write_row(self, values):
         self._csv.writerow(values)
         self._csv_file.flush()
+        if self.on_row is not None:
+            self.on_row(list(values))
 
     def close(self):
         try:

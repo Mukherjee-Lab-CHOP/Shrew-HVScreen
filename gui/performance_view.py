@@ -1,127 +1,145 @@
-"""Live performance plots for horizontal/vertical random-side experiments."""
+"""Session-wide outcome timeline for horizontal/vertical random-side tasks."""
 
-from collections import deque
+import logging
+from dataclasses import dataclass
 
 from PySide6 import QtCore, QtGui, QtWidgets
-from PySide6.QtCharts import QChart, QChartView, QLineSeries, QValueAxis
+
+
+@dataclass
+class Outcome:
+    experiment: str
+    trial: str
+    target: str
+    chosen: str
+    correct: bool
+    reward: str
 
 
 class PerformanceView(QtWidgets.QWidget):
-    WINDOW_SIZE = 10
+    TASKS = {
+        "horizontal_random_side": ("Horizontal", "horizontal_side", 35),
+        "vertical_random_side": ("Vertical", "vertical_side", 85),
+    }
+    SPACING = 28
+    COLORS = {"correct": "#16803c", "incorrect": "#c62828", "timeout": "#666666"}
 
     def __init__(self, parent=None):
         super().__init__(parent)
         layout = QtWidgets.QVBoxLayout(self)
         layout.setContentsMargins(4, 4, 4, 4)
+        legend = QtWidgets.QLabel(
+            "Filled green: correct | Filled red: incorrect\n"
+            "Hollow circle: timeout | Gray X: skipped")
+        legend.setWordWrap(True)
+        layout.addWidget(legend)
+        self.summaries = {}
+        for name in self.TASKS:
+            label = QtWidgets.QLabel()
+            label.setWordWrap(True)
+            self.summaries[name] = label
+            layout.addWidget(label)
 
-        self.summary = QtWidgets.QLabel("Waiting for random-side experiment data")
-        self.summary.setWordWrap(True)
-        layout.addWidget(self.summary)
+        timeline_row = QtWidgets.QWidget()
+        timeline_row.setFixedHeight(155)
+        row = QtWidgets.QHBoxLayout(timeline_row)
+        row.setContentsMargins(0, 0, 0, 0)
+        labels = QtWidgets.QWidget()
+        labels.setFixedWidth(80)
+        for title, _, y in self.TASKS.values():
+            label = QtWidgets.QLabel(title, labels)
+            label.setGeometry(0, y - 10, 80, 20)
+        row.addWidget(labels)
+        self.scene = QtWidgets.QGraphicsScene(self)
+        self.timeline = QtWidgets.QGraphicsView(self.scene)
+        self.timeline.setAlignment(QtCore.Qt.AlignLeft | QtCore.Qt.AlignTop)
+        self.timeline.setRenderHint(QtGui.QPainter.Antialiasing)
+        self.timeline.setVerticalScrollBarPolicy(QtCore.Qt.ScrollBarAlwaysOff)
+        self.timeline.setHorizontalScrollBarPolicy(QtCore.Qt.ScrollBarAlwaysOn)
+        self.timeline.setMinimumHeight(155)
+        self.timeline.setFixedHeight(155)
+        row.addWidget(self.timeline, 1)
+        layout.addWidget(timeline_row)
+        axis_label = QtWidgets.QLabel("Session trial order (equal spacing, not elapsed time)")
+        layout.addWidget(axis_label)
+        layout.addStretch(1)
+        self.reset_session()
 
-        self.chart = QChart()
-        self.chart.setTitle("Rolling performance (last 10 outcomes)")
-        self.accuracy_series = QLineSeries()
-        self.accuracy_series.setName("Correct choices")
-        self.accuracy_series.setColor(QtGui.QColor("#167d6a"))
-        self.reward_series = QLineSeries()
-        self.reward_series.setName("Rewarded")
-        self.reward_series.setColor(QtGui.QColor("#d17a22"))
-        self.chart.addSeries(self.accuracy_series)
-        self.chart.addSeries(self.reward_series)
+    def reset_session(self):
+        self.outcomes = []
+        self.markers = []
+        self.scene.clear()
+        self.scene.setSceneRect(0, 0, self.SPACING, 120)
+        for name in self.TASKS:
+            self._update_summary(name)
 
-        self.axis_x = QValueAxis()
-        self.axis_x.setTitleText("Trial number")
-        self.axis_x.setLabelFormat("%d")
-        self.axis_y = QValueAxis()
-        self.axis_y.setTitleText("Percent")
-        self.axis_y.setRange(0, 100)
-        self.axis_y.setLabelFormat("%d%%")
-        self.chart.addAxis(self.axis_x, QtCore.Qt.AlignBottom)
-        self.chart.addAxis(self.axis_y, QtCore.Qt.AlignLeft)
-        for series in (self.accuracy_series, self.reward_series):
-            series.attachAxis(self.axis_x)
-            series.attachAxis(self.axis_y)
-
-        self.chart_view = QChartView(self.chart)
-        self.chart_view.setRenderHint(QtGui.QPainter.Antialiasing)
-        layout.addWidget(self.chart_view, 1)
-
-    def set_data(self, header, rows):
-        columns = {name: index for index, name in enumerate(header)}
-        if "horizontal_side" in columns:
-            target_name = "Horizontal target"
-        elif "vertical_side" in columns:
-            target_name = "Vertical target"
-        else:
-            self._clear(f"Performance plot not available for this task.\n"
-                        f"Showing random-side tasks only.")
+    def add_trial(self, experiment, header, row):
+        if experiment not in self.TASKS:
             return
-
-        required = ("trial_number", "chosen_side", "correct", "reward")
-        if any(name not in columns for name in required):
-            self._clear("This CSV does not contain the fields needed for a performance plot.")
+        columns = dict(zip(header, (str(value).strip() for value in row)))
+        required = ("trial_number", self.TASKS[experiment][1],
+                    "chosen_side", "correct", "reward")
+        if len(row) != len(header) or any(key not in columns for key in required):
+            logging.getLogger(__name__).warning("Invalid performance row for %s: %r",
+                                              experiment, row)
             return
+        chosen = columns["chosen_side"].upper()
+        if chosen not in ("LEFT", "RIGHT", "TIMEOUT", "SKIP") or columns["correct"] not in (
+                "0", "1"):
+            logging.getLogger(__name__).warning("Invalid performance outcome for %s: %r",
+                                              experiment, row)
+            return
+        outcome = Outcome(experiment, columns["trial_number"],
+                          columns[self.TASKS[experiment][1]], chosen,
+                          columns["correct"] == "1", columns["reward"])
+        self.outcomes.append(outcome)
+        self._add_marker(outcome)
+        self._update_summary(experiment)
 
-        outcomes = []
-        timeouts = 0
-        skips = 0
-        left_choices = 0
-        right_choices = 0
-        for row in rows:
-            if len(row) < len(header):
-                continue
-            chosen = row[columns["chosen_side"]].strip().upper()
-            if chosen == "SKIP":
-                skips += 1
-                continue
-            try:
-                trial_number = int(float(row[columns["trial_number"]]))
-                correct = int(row[columns["correct"]]) == 1
-            except ValueError:
-                continue
-            if chosen == "TIMEOUT":
-                timeouts += 1
-            elif chosen == "LEFT":
-                left_choices += 1
-            elif chosen == "RIGHT":
-                right_choices += 1
-            rewarded = row[columns["reward"]].strip().upper() == "REWARD"
-            outcomes.append((trial_number, correct, rewarded))
-
-        self.accuracy_series.clear()
-        self.reward_series.clear()
-        recent = deque(maxlen=self.WINDOW_SIZE)
-        for trial_number, correct, rewarded in outcomes:
-            recent.append((correct, rewarded))
-            count = len(recent)
-            accuracy = 100 * sum(item[0] for item in recent) / count
-            reward_rate = 100 * sum(item[1] for item in recent) / count
-            self.accuracy_series.append(trial_number, accuracy)
-            self.reward_series.append(trial_number, reward_rate)
-
-        if outcomes:
-            first_trial = outcomes[0][0]
-            last_trial = outcomes[-1][0]
-            self.axis_x.setRange(max(0, first_trial - 1), max(first_trial + 1, last_trial + 1))
-            accuracy_total = 100 * sum(item[1] for item in outcomes) / len(outcomes)
-            reward_total = sum(item[2] for item in outcomes)
-            accuracy_text = f"{accuracy_total:.1f}%"
-            reward_text = f"{reward_total}/{len(outcomes)}"
+    def _add_marker(self, outcome):
+        bar = self.timeline.horizontalScrollBar()
+        follow_latest = bar.value() == bar.maximum()
+        number = len(self.outcomes)
+        x = number * self.SPACING
+        y = self.TASKS[outcome.experiment][2]
+        if outcome.chosen == "SKIP":
+            path = QtGui.QPainterPath()
+            path.moveTo(-5, -5)
+            path.lineTo(5, 5)
+            path.moveTo(-5, 5)
+            path.lineTo(5, -5)
+            marker = self.scene.addPath(path, QtGui.QPen(QtGui.QColor("#888888"), 2))
+            result = "Skipped"
         else:
-            self.axis_x.setRange(0, 1)
-            accuracy_text = "--"
-            reward_text = "0/0"
+            timeout = outcome.chosen == "TIMEOUT"
+            result = "Timeout" if timeout else ("Correct" if outcome.correct else "Incorrect")
+            color = QtGui.QColor(self.COLORS[result.lower()])
+            brush = QtGui.QBrush() if timeout else QtGui.QBrush(color)
+            marker = self.scene.addEllipse(-6, -6, 12, 12, QtGui.QPen(color, 2), brush)
+        marker.setPos(x, y)
+        marker.setToolTip(
+            f"Session trial {number} | {self.TASKS[outcome.experiment][0]}\n"
+            f"Stage trial: {outcome.trial} | Target: {outcome.target}\n"
+            f"{result} | Choice: {outcome.chosen} | Reward: {outcome.reward or '--'}")
+        self.markers.append(marker)
+        tick = self.scene.addSimpleText(str(number))
+        tick.setPos(x - tick.boundingRect().width() / 2, 103)
+        self.scene.setSceneRect(0, 0, x + self.SPACING, 125)
+        if follow_latest:
+            bar.setValue(bar.maximum())
 
-        self.chart.setTitle(f"{target_name}: rolling performance (last 10 outcomes)")
-        self.summary.setText(
-            f"Outcomes: {len(outcomes)} | Accuracy: {accuracy_text} | "
-            f"Rewards: {reward_text} | Left: {left_choices} | Right: {right_choices} | "
-            f"Timeouts: {timeouts} | Skips: {skips}"
-        )
-
-    def _clear(self, message):
-        self.accuracy_series.clear()
-        self.reward_series.clear()
-        self.axis_x.setRange(0, 1)
-        self.chart.setTitle("Task performance")
-        self.summary.setText(message)
+    def _update_summary(self, experiment):
+        outcomes = [item for item in self.outcomes if item.experiment == experiment]
+        left = sum(item.chosen == "LEFT" for item in outcomes)
+        right = sum(item.chosen == "RIGHT" for item in outcomes)
+        choices = left + right
+        correct = sum(item.correct for item in outcomes if item.chosen in ("LEFT", "RIGHT"))
+        timeouts = sum(item.chosen == "TIMEOUT" for item in outcomes)
+        skips = sum(item.chosen == "SKIP" for item in outcomes)
+        left_pct = f"{100 * left / choices:.1f}%" if choices else "--"
+        right_pct = f"{100 * right / choices:.1f}%" if choices else "--"
+        self.summaries[experiment].setText(
+            f"{self.TASKS[experiment][0]}: Left: {left} ({left_pct}) | "
+            f"Right: {right} ({right_pct})\n"
+            f"Correct: {correct} | Incorrect: {choices - correct} | "
+            f"Timeouts: {timeouts} | Skips: {skips}")

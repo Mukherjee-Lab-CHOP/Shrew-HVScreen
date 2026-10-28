@@ -58,16 +58,25 @@ A PySide6 control panel that wires the whole system together:
   choose the **stimulus monitor**, and Start/Stop the run with manual
   `c`/`l`/`r`/`t` controls.
 - **Left** — pick an experiment and edit its **variables** in a narrow control
-  column. A compact **Stages & loops** pipeline sits below the stage
+  column. A tall **Stages & loops** pipeline sits below the compact stage
   editor: *run experiment X for N trials with these variable overrides, then
-  switch to the next stage.* Drag the vertical dividers to expand it for larger
-  pipelines. "Add as pipeline stage →" adds the current setup to this list.
+  switch to the next stage.* The pipeline gets the remaining height after the
+  editor's minimum usable size; drag their divider to give the editor more room.
+  "Add as pipeline stage →" adds the current setup to this list.
 - **Middle** — a narrow **mirror** of the secondary (stimulus) screen and an
   optional **live camera preview**, with camera selection and preview buttons
   on separate rows. Drag the column dividers to adjust widths.
-- **Right** — tabs for the **live CSV** being written and **Performance** plots
+- **Right** — tabs for the **live CSV** being written and **Performance**
   above a tall **state-machine node graph** (drag nodes; the live current state
   highlights during a run). Drag the divider to adjust the data/graph heights.
+  Performance keeps horizontal and vertical outcomes in two rows on a shared
+  session-trial-order axis across all loop iterations. Green/red filled circles
+  mean correct/incorrect choices, hollow circles mean timeouts, and gray X marks
+  mean explicitly skipped trials. Waiting for center initiation is not a skip.
+  Hover over a marker for details; scroll horizontally to revisit older trials.
+  Left/right choice counts and percentages are separate for each task and exclude
+  timeouts/skips. History remains after Stop/completion and resets on a new run;
+  per-stage CSV logging is unchanged.
 - **Bottom** — two logs: **commands sent out** to the Arduino, and **prints /
   events** (experiment logs + inbound firmware lines).
 

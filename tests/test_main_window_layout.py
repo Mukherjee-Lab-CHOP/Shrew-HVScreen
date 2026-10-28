@@ -38,7 +38,7 @@ class MainWindowLayoutTest(unittest.TestCase):
         self.assertIs(tabs.currentWidget(), self.window.performance_view)
         self.assertIs(columns.widget(1).widget(1), self.window.camera_panel)
 
-    def test_pipeline_is_compact_below_editor_and_remains_expandable(self):
+    def test_pipeline_uses_available_height_below_minimum_editor_and_remains_resizable(self):
         pipeline = self.window.pipeline
         left = pipeline.parentWidget()
         self.assertIsInstance(left, QtWidgets.QSplitter)
@@ -47,12 +47,25 @@ class MainWindowLayoutTest(unittest.TestCase):
         self.assertIs(left.widget(1), pipeline)
         self.assertTrue(left.widget(0).isAncestorOf(self.window.stage_editor))
         self.assertLessEqual(left.width(), 610)
-        self.assertLessEqual(pipeline.height(), 240)
-        self.assertGreaterEqual(pipeline.tree.height(), 44)
+        editor = left.widget(0)
+        self.assertAlmostEqual(editor.height(), editor.minimumSizeHint().height(), delta=2)
+        self.assertGreater(pipeline.height(), editor.height())
+        self.assertGreaterEqual(pipeline.tree.height(), 150)
         sizes = left.sizes()
-        left.setSizes([sizes[0] - 50, sizes[1] + 50])
+        left.setSizes([sizes[0] + 50, sizes[1] - 50])
         self.app.processEvents()
-        self.assertGreater(pipeline.height(), sizes[1])
+        self.assertGreater(editor.height(), sizes[0])
+        self.assertLess(pipeline.height(), sizes[1])
+
+    def test_pipeline_receives_extra_height_when_window_grows(self):
+        pipeline = self.window.pipeline
+        editor = pipeline.parentWidget().widget(0)
+        editor_height = editor.height()
+        pipeline_height = pipeline.height()
+        self.window.resize(self.window.width(), self.window.height() + 200)
+        self.app.processEvents()
+        self.assertEqual(editor.height(), editor_height)
+        self.assertGreater(pipeline.height(), pipeline_height)
 
     def test_preview_column_is_about_half_previous_640_pixel_width(self):
         self.assertLessEqual(self.window.camera_panel.width(), 360)
@@ -72,6 +85,21 @@ class MainWindowLayoutTest(unittest.TestCase):
         self.assertEqual(self.window._edit_kind, "stage")
         self.assertEqual(self.window.exp_combo.currentText(), node["experiment"])
         self.assertIn("Editing stage", self.window.mode_label.text())
+
+    def test_performance_is_session_driven_not_replaced_by_csv_refresh(self):
+        view = self.window.performance_view
+        header = ["trial_number", "target_onset_timestamp", "horizontal_side",
+                  "chosen_side", "correct", "reward_percent", "reward"]
+        row = [1, 100, "LEFT", "LEFT", 1, 1.0, "REWARD"]
+        self.window._handle_event("session", None)
+        self.window._handle_event("trial", ("horizontal_random_side", header, row))
+        self.window.csv_view.data_changed.emit(header, [row])
+        self.window.csv_view.data_changed.emit([], [])
+        self.window._handle_event("done", None)
+        self.window._on_worker_finished()
+        self.assertEqual(len(view.outcomes), 1)
+        self.window._handle_event("session", None)
+        self.assertEqual(view.outcomes, [])
 
 
 if __name__ == "__main__":
