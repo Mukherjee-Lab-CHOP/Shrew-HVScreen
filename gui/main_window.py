@@ -2,9 +2,9 @@
 
 Layout:
     top     : serial bar (COM/connect, stimulus screen) + run controls
-    left    : experiment/variable editor + compact pipeline
+    left    : compact experiment/variable editor + tall pipeline
     middle  : stimulus mirror + optional camera preview
-    right   : live CSV table/performance plots above the state-machine graph
+    right   : live CSV table/session performance above the state-machine graph
     bottom  : commands-out log | prints/events log
 
 A ~30 ms QTimer drains the Bus (filled by the background worker) and updates the
@@ -114,12 +114,11 @@ class MainWindow(QtWidgets.QMainWindow):
 
         self.csv_view = CsvView()
         self.performance_view = PerformanceView()
-        self.csv_view.data_changed.connect(self.performance_view.set_data)
         self.data_tabs = QtWidgets.QTabWidget()
         self.data_tabs.addTab(self.csv_view, "CSV (live)")
         self.data_tabs.addTab(self.performance_view, "Performance")
         self.data_tabs.setCurrentWidget(self.performance_view)
-        # left: experiment + variables + compact pipeline
+        # left: compact experiment + variables above a tall pipeline
         hsplit.addWidget(self._build_left_panel())
 
         # middle: narrow mirror + camera
@@ -238,7 +237,7 @@ class MainWindow(QtWidgets.QMainWindow):
         return row
 
     def _build_left_panel(self):
-        # Keep the pipeline compact by default, but expandable for larger trees.
+        # Prioritize the pipeline while keeping the experiment editor usable.
         split = QtWidgets.QSplitter(QtCore.Qt.Vertical)
 
         top = QtWidgets.QWidget()
@@ -312,9 +311,9 @@ class MainWindow(QtWidgets.QMainWindow):
         self.pipeline.tree.setMinimumHeight(44)
         split.addWidget(self.pipeline)
 
-        split.setSizes([420, 220])
-        split.setStretchFactor(0, 1)
-        split.setStretchFactor(1, 0)
+        split.setSizes([top.minimumSizeHint().height(), 660])
+        split.setStretchFactor(0, 0)
+        split.setStretchFactor(1, 1)
         if self.registry:
             self._on_experiment_selected(self.exp_combo.currentText())
         return split
@@ -661,7 +660,11 @@ class MainWindow(QtWidgets.QMainWindow):
             self.stim_scene.black()
 
     def _handle_event(self, kind, payload):
-        if kind == "state":
+        if kind == "session":
+            self.performance_view.reset_session()
+        elif kind == "trial":
+            self.performance_view.add_trial(*payload)
+        elif kind == "state":
             self.graph.set_current_state(payload)
         elif kind == "node":
             # highlight the running stage node in the pipeline tree

@@ -75,6 +75,7 @@ class PipelineWorker(QtCore.QThread):
         prev_hook = getattr(self._hw.link, "on_send", None)
         self._hw.link.on_send = self._bus.push_command
 
+        self._bus.push_event("session")
         self._bus.set_status(running=True)
         try:
             self._run_pipeline()
@@ -161,6 +162,9 @@ class PipelineWorker(QtCore.QThread):
         exp = self._build_experiment(info["class"], csv_path, params)
         if exp is None:
             return
+
+        header = list(exp.CSV_HEADER)
+        exp.on_row = lambda row: self._bus.push_event("trial", (name, header, row))
 
         def completed(e):
             # uniform "trials finished" count; fall back to trial_num
